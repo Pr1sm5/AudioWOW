@@ -1,6 +1,6 @@
 import numpy as np
 import soundfile as sf  # pip install soundfile
-
+import sounddevice as sd
 
 def load_wav(filepath: str) -> tuple[np.ndarray, int]:
     """
@@ -19,6 +19,6 @@ def load_wav(filepath: str) -> tuple[np.ndarray, int]:
 
 def get_microphone_devices() -> list:
     """Listet verfügbare Eingabegeräte auf."""
-    import sounddevice as sd
+
     devices = sd.query_devices()
     return [d for d in devices if d['max_input_channels'] > 0]
