@@ -1,6 +1,14 @@
-from audio.processor import load_file, start_stream, active_effects
+from audio.processor import load_file, start_stream, active_effects, set_volume
 from effects.lowpass import apply_lowpass
 from effects.reverb import apply_reverb
+
+
+_current_volume = 1.0
+
+def _change_volume(delta: float):
+    global _current_volume
+    _current_volume = max(0.0, min(2.0, _current_volume + delta))
+    set_volume(_current_volume)
 
 
 def main():
@@ -26,6 +34,10 @@ def main():
                _toggle(apply_lowpass, "Lowpass")
             elif key == 'r':
                _toggle(apply_reverb, "Reverb")
+            elif key == '+':
+               _change_volume(+0.1)
+            elif key == '-':
+                _change_volume(-0.1)
 
     print("Tschüss!")
 
