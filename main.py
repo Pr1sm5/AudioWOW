@@ -1,6 +1,6 @@
 from audio.processor import load_file, start_stream, active_effects, set_volume
 from effects.lowpass import apply_lowpass
-from effects.reverb import apply_reverb
+from effects.reverb import apply_reverb, reset
 
 
 _current_volume = 1.0
@@ -44,6 +44,7 @@ def main():
 
 def _toggle(effect_fn, name: str):
     if effect_fn in active_effects:
+        reset()
         active_effects.remove(effect_fn)
         print(f"{name}: OFF")
     else:
