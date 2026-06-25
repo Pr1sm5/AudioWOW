@@ -112,7 +112,25 @@ def prompt_input_source() -> None:
 def _adjust_params(key: str) -> None:
     try:
         if key == 'r':
-            print("  Reverb hat keine einstellbaren Parameter.")
+            from effects.reverb import set_preset, set_mix
+            print("  [1] Preset wählen")
+            print("  [2] Dry/Wet Mix")
+            print("  [3] Beide")
+            sub = input("  Auswahl: ").strip()
+
+            if sub in ('1', '3'):
+                print("  [s] Small  [m] Medium  [l] Large  [c] Cave")
+                p = input("  Preset: ").strip().lower()
+                presets = {'s': 'small', 'm': 'medium', 'l': 'large', 'c': 'cave'}
+                if p in presets:
+                    set_preset(presets[p])
+                else:
+                    print("  Unbekanntes Preset.")
+
+            if sub in ('2', '3'):
+                val = input("  Mix 0.0-1.0 (Enter = 0.5): ").strip()
+                set_mix(float(val) if val else 0.5)
+                print(f"  Reverb Mix: {float(val) if val else 0.5}")
 
         elif key == 'd':
             from effects.delay import set_delay_strength, set_feedback
@@ -172,6 +190,53 @@ def _change_volume(delta: float) -> None:
     _current_volume = max(0.0, min(2.0, _current_volume + delta))
     set_volume(_current_volume)
 
+def _track_fx_menu() -> None:
+    """Effekte auf einzelne Tracks anwenden."""
+    mixer.list_tracks()
+    idx = input("Track Index: ").strip()
+    if not idx.isdigit():
+        return
+    idx = int(idx)
+
+    print("\nEffekt wählen:")
+    for k, (name, _, _) in EFFECTS.items():
+        print(f"  [{k}] {name}")
+
+    key = input("Effekt Key: ").strip().lower()
+    if key not in EFFECTS:
+        print("Unbekannter Effekt.")
+        return
+
+    name, effect_fn, reset_fn = EFFECTS[key]
+    track = mixer._tracks[idx]
+
+    if effect_fn in track['effects']:
+        mixer.remove_track_effect(idx, effect_fn)
+        if reset_fn:
+            reset_fn()
+        print(f"{name}: OFF für Track {idx}")
+    else:
+        mixer.add_track_effect(idx, effect_fn)
+        print(f"{name}: ON für Track {idx}")
+        _adjust_params(key)
+
+
+def _track_volume_menu() -> None:
+    """Lautstärke eines einzelnen Tracks anpassen."""
+    mixer.list_tracks()
+    idx = input("Track Index: ").strip()
+    if not idx.isdigit():
+        return
+    idx = int(idx)
+
+    vol = input(f"Neue Lautstärke 0.0-2.0 (Enter = 1.0): ").strip()
+    try:
+        vol = float(vol) if vol else 1.0
+        mixer.set_track_volume(idx, vol)
+    except ValueError:
+        print("Ungültige Eingabe.")
+
+
 
 # ─── Anzeige ──────────────────────────────────────────────────────────────────
 
@@ -194,6 +259,7 @@ def _print_help() -> None:
 ║  [+]  Lauter  [-]  Leiser        ║
 ║  [i]  Status  [s]  Quellen       ║
 ║  [?]  Hilfe   [q]  Beenden       ║
+║  [f]  Track FX   [v]  Track Vol  ║
 ╚══════════════════════════════════╝""")
 
 
@@ -228,10 +294,13 @@ def run() -> None:
                     _adjust_params(pk)
             elif key == '+':
                 _change_volume(+0.1)
+
             elif key == '-':
                 _change_volume(-0.1)
+
             elif key == 'i':
                 _print_status()
+
             elif key == 's':
                 stream.stop()
                 active_effects.clear()
@@ -239,8 +308,16 @@ def run() -> None:
                 mixer._mic_enabled = False
                 prompt_input_source()
                 stream.start()
+
+            elif key == 'f':  # Track-FX
+                _track_fx_menu()
+
+            elif key == 'v':  # Track-Volume
+                _track_volume_menu()
+
             elif key == '?':
                 _print_help()
+
             elif key == 'o':  # s-olo
                 mixer.list_tracks()
                 idx = input("Track Index für Solo (Enter = aufheben): ").strip()

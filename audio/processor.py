@@ -33,7 +33,7 @@ def enable_mic(device_index: int = None, volume: float = 1.0):
 
 
 def _callback_file(outdata, frames, time, status):
-    chunk = mixer.get_mix_chunk(frames)
+    chunk = mixer.get_mix_chunk(frames, samplerate=SAMPLERATE)  # ← samplerate ergänzt
 
     for effect_fn in active_effects:
         chunk = effect_fn(chunk, SAMPLERATE)
@@ -44,7 +44,7 @@ def _callback_file(outdata, frames, time, status):
 
 def _callback_mic(indata, outdata, frames, time, status):
     mic_chunk = indata[:, 0].copy()
-    chunk = mixer.get_mix_chunk(frames, mic_chunk=mic_chunk)
+    chunk = mixer.get_mix_chunk(frames, samplerate=SAMPLERATE, mic_chunk=mic_chunk)  # ← samplerate ergänzt
 
     for effect_fn in active_effects:
         chunk = effect_fn(chunk, SAMPLERATE)
