@@ -6,7 +6,12 @@ _delay_buffer_pos = 0
 
 # Stärke des Delay-Effekts (0.0 - 1.0)
 _delay_mix = 0.5
+_feedback = 0.4  # ← global ergänzen
 
+
+def set_feedback(value: float):
+    global _feedback
+    _feedback = max(0.0, min(0.9, value))
 
 def set_delay_strength(strength: float):
     """

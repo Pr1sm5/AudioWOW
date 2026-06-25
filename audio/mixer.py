@@ -1,9 +1,9 @@
 import numpy as np
 
-# Jede Quelle: {'data': np.ndarray, 'position': int, 'volume': float, 'name': str}
 _tracks = []
 _mic_enabled = False
 _mic_volume = 1.0
+_solo_index = None  # ← neu: None = alle spielen, int = nur dieser Track
 
 
 def add_track(data: np.ndarray, name: str = "Track", volume: float = 1.0):
@@ -11,24 +11,51 @@ def add_track(data: np.ndarray, name: str = "Track", volume: float = 1.0):
         'data': data.astype('float32'),
         'position': 0,
         'volume': volume,
-        'name': name
+        'name': name,
+        'muted': False,   # ← neu
     })
     print(f"Track hinzugefügt: {name} | {len(data)} Samples")
 
 
 def remove_track(index: int):
+    global _solo_index
     if 0 <= index < len(_tracks):
         name = _tracks[index]['name']
         _tracks.pop(index)
+        if _solo_index == index:
+            _solo_index = None  # Solo aufheben wenn Track weg
         print(f"Track entfernt: {name}")
 
 
 def list_tracks():
-    if not _tracks:
+    if not _tracks and not _mic_enabled:
         print("Keine Tracks geladen.")
         return
     for i, t in enumerate(_tracks):
-        print(f"  [{i}] {t['name']} | Volume: {int(t['volume'] * 100)}%")
+        solo_marker  = " [SOLO]"  if _solo_index == i    else ""
+        mute_marker  = " [MUTE]"  if t['muted']          else ""
+        print(f"  [{i}] {t['name']} | Vol: {int(t['volume'] * 100)}%{solo_marker}{mute_marker}")
+    if _mic_enabled:
+        print(f"  [M] Mikrofon | Vol: {int(_mic_volume * 100)}%")
+
+
+def solo_track(index: int):
+    """Nur diesen Track abspielen. Nochmal aufrufen hebt Solo auf."""
+    global _solo_index
+    if _solo_index == index:
+        _solo_index = None
+        print(f"Solo OFF")
+    else:
+        _solo_index = index
+        print(f"Solo: {_tracks[index]['name']}")
+
+
+def mute_track(index: int):
+    """Track stumm schalten / wieder einschalten."""
+    if 0 <= index < len(_tracks):
+        _tracks[index]['muted'] = not _tracks[index]['muted']
+        state = "MUTE" if _tracks[index]['muted'] else "UNMUTE"
+        print(f"{state}: {_tracks[index]['name']}")
 
 
 def set_track_volume(index: int, volume: float):
@@ -46,35 +73,44 @@ def enable_mic(volume: float = 1.0):
 def disable_mic():
     global _mic_enabled
     _mic_enabled = False
-    print("Mic-Track: deaktiviert")
 
 
 def get_mix_chunk(frames: int, mic_chunk: np.ndarray = None) -> np.ndarray:
-    """Mixt alle aktiven Tracks + optional Mic zu einem Chunk zusammen."""
     mixed = np.zeros(frames, dtype='float32')
 
-    # WAV Tracks addieren
-    for track in _tracks:
+    for i, track in enumerate(_tracks):
+        # Solo aktiv → nur Solo-Track spielen, Rest überspringen
+        if _solo_index is not None and _solo_index != i:
+            _advance_position(track, frames)  # Position trotzdem vorrücken
+            continue
+
+        if track['muted']:
+            _advance_position(track, frames)
+            continue
+
         data = track['data']
-        pos = track['position']
-        end = pos + frames
+        pos  = track['position']
+        end  = pos + frames
 
         chunk = data[pos:end]
         if len(chunk) < frames:
             chunk = np.pad(chunk, (0, frames - len(chunk)))
 
         mixed += chunk * track['volume']
-
-        # Loop
         track['position'] = end % len(data)
 
-    # Mic addieren
     if _mic_enabled and mic_chunk is not None:
-        mixed += mic_chunk * _mic_volume
+        if _solo_index is None:  # Mic nur wenn kein Solo aktiv
+            mixed += mic_chunk * _mic_volume
 
-    # Normalisieren — verhindert Clipping wenn mehrere Tracks laut sind
     peak = np.max(np.abs(mixed))
     if peak > 1.0:
         mixed /= peak
 
     return mixed
+
+
+def _advance_position(track: dict, frames: int):
+    """Rückt die Position vor ohne Audio zu mixen — hält gemutete/nicht-solo Tracks synchron."""
+    data = track['data']
+    track['position'] = (track['position'] + frames) % len(data)
