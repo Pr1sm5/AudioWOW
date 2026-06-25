@@ -27,7 +27,7 @@ from effects.reverb import set_mix as set_reverb_mix
 
 
 WIDTH = 1180
-HEIGHT = 980
+HEIGHT = 1040
 FPS = 60
 
 COLORS = {
@@ -221,36 +221,36 @@ class AudioWowPygame:
 
     def _build_controls(self):
         self.controls = [
-            Button((42, 142, 136, 44), "Add WAV", self._choose_wav, COLORS["cyan"]),
-            Button((194, 142, 136, 44), "Add Sine", self._use_sine, COLORS["green"]),
-            Button((346, 142, 136, 44), "Mic", self._use_microphone, COLORS["pink"]),
-            Button((498, 142, 116, 44), "Refresh", lambda: self._refresh_mics(), COLORS["panel_2"]),
-            Button((42, 202, 136, 36), "Next Mic", self._next_mic, COLORS["panel_2"]),
-            Button((42, 922, 116, 40), "Resume", self._resume_stream, COLORS["green"]),
-            Button((172, 922, 102, 40), "Stop", self._stop_stream, COLORS["red"]),
-            Button((288, 922, 132, 40), "Clear FX", self._clear_effects, COLORS["panel_2"]),
-            Button((434, 922, 148, 40), "Clear Sources", self._clear_sources, COLORS["panel_2"]),
-            Button((596, 922, 136, 40), "All Track FX", self._select_all_tracks, COLORS["cyan"]),
+            Button((42, 162, 136, 44), "Add WAV", self._choose_wav, COLORS["cyan"]),
+            Button((194, 162, 136, 44), "Add Sine", self._use_sine, COLORS["green"]),
+            Button((346, 162, 136, 44), "Mic", self._use_microphone, COLORS["pink"]),
+            Button((498, 162, 116, 44), "Refresh", lambda: self._refresh_mics(), COLORS["panel_2"]),
+            Button((42, 222, 136, 36), "Next Mic", self._next_mic, COLORS["panel_2"]),
+            Button((42, 982, 116, 40), "Resume", self._resume_stream, COLORS["green"]),
+            Button((172, 982, 102, 40), "Stop", self._stop_stream, COLORS["red"]),
+            Button((288, 982, 132, 40), "Clear FX", self._clear_effects, COLORS["panel_2"]),
+            Button((434, 982, 148, 40), "Clear Sources", self._clear_sources, COLORS["panel_2"]),
+            Button((596, 982, 136, 40), "All Track FX", self._select_all_tracks, COLORS["cyan"]),
         ]
 
         self.effect_pads = []
         x = 42
         for key, (label, _effect_fn, _reset_fn, color) in EFFECTS.items():
-            pad = TogglePad((x, 312, 162, 62), key, label, color, self._toggle_effect)
+            pad = TogglePad((x, 330, 162, 52), key, label, color, self._toggle_effect)
             self.effect_pads.append(pad)
             x += 184
 
         self.sliders = [
-            Slider((224, 218, 300, 28), "Sine frequency", 20.0, 20000.0, self.sine_freq, self._set_sine_freq),
-            Slider((572, 218, 260, 28), "Sine duration", 0.25, 30.0, self.sine_duration, self._set_sine_duration),
-            Slider((42, 434, 260, 28), "Master volume", 0.0, 2.0, 1.0, set_volume, lambda value: f"{int(value * 100)}%"),
-            Slider((342, 434, 240, 28), "Reverb mix", 0.0, 1.0, 0.5, set_reverb_mix),
-            Slider((622, 434, 240, 28), "Delay seconds", 0.01, 2.0, 0.35, set_delay),
-            Slider((902, 434, 210, 28), "Delay feedback", 0.0, 0.9, 0.4, set_feedback),
-            Slider((42, 522, 260, 28), "Lowpass cutoff", 20.0, 20000.0, 1000.0, set_lowpass_cutoff),
-            Slider((342, 522, 240, 28), "Highpass cutoff", 20.0, 20000.0, 500.0, set_highpass_cutoff),
-            Slider((622, 522, 240, 28), "Distortion drive", 1.0, 20.0, 8.0, set_drive),
-            Slider((902, 522, 210, 28), "Distortion level", 0.0, 1.0, 0.7, set_level),
+            Slider((224, 238, 300, 28), "Sine frequency", 20.0, 20000.0, self.sine_freq, self._set_sine_freq),
+            Slider((572, 238, 260, 28), "Sine duration", 0.25, 30.0, self.sine_duration, self._set_sine_duration),
+            Slider((42, 482, 260, 28), "Master volume", 0.0, 2.0, 1.0, set_volume, lambda value: f"{int(value * 100)}%"),
+            Slider((342, 482, 240, 28), "Reverb mix", 0.0, 1.0, 0.5, set_reverb_mix),
+            Slider((622, 482, 240, 28), "Delay seconds", 0.01, 2.0, 0.35, set_delay),
+            Slider((902, 482, 210, 28), "Delay feedback", 0.0, 0.9, 0.4, set_feedback),
+            Slider((42, 560, 260, 28), "Lowpass cutoff", 20.0, 20000.0, 1000.0, set_lowpass_cutoff),
+            Slider((342, 560, 240, 28), "Highpass cutoff", 20.0, 20000.0, 500.0, set_highpass_cutoff),
+            Slider((622, 560, 240, 28), "Distortion drive", 1.0, 20.0, 8.0, set_drive),
+            Slider((902, 560, 210, 28), "Distortion level", 0.0, 1.0, 0.7, set_level),
         ]
         self._sync_track_controls()
         self._sync_track_fx_controls(force=True)
@@ -311,11 +311,11 @@ class AudioWowPygame:
     def _draw(self, mouse_pos):
         self.screen.fill(COLORS["bg"])
         self._draw_header()
-        self._draw_panel((28, 118, 1108, 144), "Sources")
-        self._draw_panel((28, 292, 924, 104), "Effects")
-        self._draw_panel((28, 412, 1108, 168), "Global Controls")
-        self._draw_panel((28, 600, 1108, 144), "Tracks")
-        self._draw_panel((28, 764, 1108, 150), "Selected Track Effects")
+        self._draw_panel((28, 118, 1108, 164), "Sources")
+        self._draw_panel((28, 292, 924, 108), "Effects")
+        self._draw_panel((28, 420, 1108, 180), "Global Controls")
+        self._draw_panel((28, 620, 1108, 144), "Tracks")
+        self._draw_panel((28, 784, 1108, 190), "Selected Track Effects")
         self._draw_visualizer()
         self._draw_footer()
 
@@ -345,7 +345,7 @@ class AudioWowPygame:
         draw_text(self.screen, self.fonts["section"], title, (panel.left + 14, panel.top + 12), COLORS["text"])
 
     def _draw_visualizer(self):
-        rect = pygame.Rect(660, 142, 446, 96)
+        rect = pygame.Rect(660, 162, 446, 96)
         pygame.draw.rect(self.screen, (10, 12, 16), rect, border_radius=8)
         pygame.draw.rect(self.screen, COLORS["line"], rect, width=1, border_radius=8)
 
@@ -390,19 +390,19 @@ class AudioWowPygame:
 
     def _draw_footer(self):
         mic_label = self._current_mic_label()
-        draw_text(self.screen, self.fonts["small"], f"Mic: {mic_label}", (708, 928), COLORS["muted"])
-        draw_text(self.screen, self.fonts["small"], "Keys: W add WAV, S add sine, M mic, Space stop/resume, Esc quit", (708, 950), COLORS["muted"])
+        draw_text(self.screen, self.fonts["small"], f"Mic: {mic_label}", (760, 988), COLORS["muted"])
+        draw_text(self.screen, self.fonts["small"], "Keys: W add WAV, S add sine, M mic, Space stop/resume, Esc quit", (760, 1010), COLORS["muted"])
 
     def _draw_tracks(self, mouse_pos):
         if not any(getattr(control, "dragging", False) for control in self.track_controls):
             self._sync_track_controls()
         tracks = mixer.get_tracks()
         if not tracks:
-            draw_text(self.screen, self.fonts["body"], "No tracks loaded yet", (48, 652), COLORS["muted"])
+            draw_text(self.screen, self.fonts["body"], "No tracks loaded yet", (48, 680), COLORS["muted"])
             return
 
         for track in tracks[:4]:
-            y = 640 + track["index"] * 24
+            y = 668 + track["index"] * 24
             name = track["name"]
             if len(name) > 36:
                 name = name[:33] + "..."
@@ -417,7 +417,7 @@ class AudioWowPygame:
             draw_text(self.screen, self.fonts["small"], f"{track['index'] + 1}. {name}{flag_text}", (48, y - 13), COLORS["text"])
 
         if len(tracks) > 4:
-            draw_text(self.screen, self.fonts["small"], f"+ {len(tracks) - 4} more track(s)", (984, 706), COLORS["muted"])
+            draw_text(self.screen, self.fonts["small"], f"+ {len(tracks) - 4} more track(s)", (984, 734), COLORS["muted"])
 
         for control in self.track_controls:
             control.draw(self.screen, self.fonts, mouse_pos)
@@ -426,18 +426,18 @@ class AudioWowPygame:
         if not any(getattr(control, "dragging", False) for control in self.track_fx_controls):
             self._sync_track_fx_controls()
         if self.selected_track_index is None or (self.selected_track_index != -1 and self.selected_track_index >= mixer.track_count()):
-            draw_text(self.screen, self.fonts["body"], "Select a track to edit its own effects", (48, 810), COLORS["muted"])
+            draw_text(self.screen, self.fonts["body"], "Select a track to edit its own effects", (48, 842), COLORS["muted"])
             return
 
         tracks = mixer.get_tracks()
         if self.selected_track_index == -1:
-            draw_text(self.screen, self.fonts["small"], "Editing: all loaded tracks", (48, 792), COLORS["muted"])
+            draw_text(self.screen, self.fonts["small"], "Editing: all loaded tracks", (48, 822), COLORS["muted"])
         else:
             track = tracks[self.selected_track_index]
             name = track["name"]
             if len(name) > 44:
                 name = name[:41] + "..."
-            draw_text(self.screen, self.fonts["small"], f"Editing: {name}", (48, 792), COLORS["muted"])
+            draw_text(self.screen, self.fonts["small"], f"Editing: {name}", (48, 822), COLORS["muted"])
 
         for pad in self.track_effect_pads:
             pad.draw(self.screen, self.fonts, mouse_pos)
@@ -630,7 +630,7 @@ class AudioWowPygame:
         self.track_controls = []
         for row, track in enumerate(tracks):
             index = track["index"]
-            y = 652 + row * 24
+            y = 680 + row * 24
             self.track_controls.append(
                 Slider(
                     (370, y - 2, 300, 20),
@@ -700,15 +700,15 @@ class AudioWowPygame:
         self.track_effect_pads = []
         x = 226
         for key, (label, _effect_fn, _reset_fn, color) in EFFECTS.items():
-            pad = TogglePad((x, 790, 104, 34), key, label, color, self._toggle_track_effect)
+            pad = TogglePad((x, 820, 104, 34), key, label, color, self._toggle_track_effect)
             pad.enabled = key in enabled
             self.track_effect_pads.append(pad)
             x += 112
 
         self.track_fx_controls = []
         slider_positions = [
-            (42, 838, 124), (206, 838, 124), (370, 838, 124), (534, 838, 124),
-            (698, 838, 124), (862, 838, 124), (42, 898, 124), (206, 898, 124),
+            (42, 882, 124), (206, 882, 124), (370, 882, 124), (534, 882, 124),
+            (698, 882, 124), (862, 882, 124), (42, 942, 124), (206, 942, 124),
         ]
         for (effect_name, param_name, label, minimum, maximum), (x, y, width) in zip(TRACK_FX_SLIDERS, slider_positions):
             value = params[effect_name][param_name]
