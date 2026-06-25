@@ -3,6 +3,7 @@ from effects.lowpass import apply_lowpass
 from effects.reverb import apply_reverb, reset
 from effects.delay import apply_delay
 from effects.distortion import apply_distortion
+from effects.highpass import apply_highpass
 
 
 _current_volume = 1.0
@@ -24,6 +25,7 @@ def main():
     with stream:
         print("\nKeybinds:")
         print("  [l] Lowpass toggle")
+        print("  [h] Highpass toggle")
         print("  [r] Reverb toggle")
         print("  [d] Delay toggle")
         print("  [i] Distortion")
@@ -36,6 +38,8 @@ def main():
                 break
             elif key == 'l':
                _toggle(apply_lowpass, "Lowpass")
+            elif key == 'h':
+                _toggle(apply_highpass, "Highpass")
             elif key == 'r':
                _toggle(apply_reverb, "Reverb")
             elif key == 'd':
