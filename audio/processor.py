@@ -52,6 +52,14 @@ def _callback_mic(indata, outdata, frames, time, status):
     chunk = chunk * _volume
     outdata[:] = chunk.reshape(-1, 1)
 
+def load_audio_data(data: np.ndarray, samplerate: int = 44100):
+    """Lädt ein numpy array direkt als Audioquelle (z.B. Sinuswelle)."""
+    global _audio_data, _position, _mic_mode, SAMPLERATE
+    _mic_mode = False
+    _audio_data = data.astype('float32')
+    _position = 0
+    SAMPLERATE = samplerate
+    print(f"Audio geladen | {samplerate} Hz | {len(data)} Samples")
 
 def start_stream():
     if _mic_mode:
