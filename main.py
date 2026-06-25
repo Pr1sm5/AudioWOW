@@ -1,9 +1,8 @@
-<<<<<<< Updated upstream
-=======
 import numpy as np
-from audio.processor import load_file, load_audio_data, enable_mic, start_stream, active_effects, set_volume
+from audio.processor import load_file, enable_mic, start_stream, active_effects, set_volume
 from effects.reverb import apply_reverb, reset as reset_reverb
 from audio.input_handler import get_microphone_devices
+from audio import mixer
 
 _current_volume = 1.0
 
@@ -13,57 +12,56 @@ def generate_sine_wave(frequency: float = 440.0, duration: float = 5.0, samplera
     return np.sin(2 * np.pi * frequency * t).astype('float32')
 
 
-def choose_input_source() -> None:
-    print("\nInput-Quelle wählen:")
-    print("  [1] Audio-Datei (WAV)")
-    print("  [2] Sinuswelle")
-    print("  [3] Mikrofon")
-
+# Beim Start mehrere Quellen laden:
+def choose_input_source():
     while True:
-        choice = input("Auswahl (1/2/3): ").strip()
+        print("\nWas hinzufügen?")
+        print("  [1] WAV-Datei")
+        print("  [2] Sinuswelle")
+        print("  [3] Mikrofon")
+        print("  [4] Track entfernen")
+        print("  [5] Tracks anzeigen")
+        print("  [d] Fertig / Starten")
+
+        choice = input("Auswahl: ").strip().lower()
 
         if choice == '1':
             filepath = input("WAV-Datei Pfad: ").strip()
-            load_file(filepath)
-            break
+            vol = input("Volume 0.0-2.0 (Enter = 1.0): ").strip()
+            vol = float(vol) if vol else 1.0
+            load_file(filepath, volume=vol)
 
         elif choice == '2':
-            try:
-                freq = input("Frequenz in Hz (Enter = 440Hz): ").strip()
-                freq = float(freq) if freq else 440.0
-                dur = input("Dauer in Sekunden (Enter = 5s): ").strip()
-                dur = float(dur) if dur else 5.0
-                wave = generate_sine_wave(frequency=freq, duration=dur)
-                load_audio_data(wave, samplerate=44100)
-                print(f"Sinuswelle: {freq}Hz, {dur}s")
-                break
-            except ValueError:
-                print("Ungültige Eingabe.")
-
+            freq = input("Frequenz Hz (Enter = 440): ").strip()
+            freq = float(freq) if freq else 440.0
+            dur = input("Dauer Sekunden (Enter = 5): ").strip()
+            dur = float(dur) if dur else 5.0
+            wave = generate_sine_wave(freq, dur)
+            mixer.add_track(wave, name=f"Sine {freq}Hz", volume=1.0)
 
         elif choice == '3':
             devices = get_microphone_devices()
-            if not devices:
-                print("Kein Mikrofon gefunden!")
-                continue
-
-            print("\nVerfügbare Mikrofone:")
-
             for i, d in enumerate(devices):
                 print(f"  [{i}] {d['name']} (Index: {d['index']})")
+            idx = input("Gerät (Enter = Standard): ").strip()
+            device_index = devices[int(idx)]['index'] if idx else None
+            vol = input("Mic Volume (Enter = 1.0): ").strip()
+            vol = float(vol) if vol else 1.0
+            enable_mic(device_index, volume=vol)
 
-            idx = input("Gerät wählen (Enter = Standard): ").strip()
+        elif choice == '4':
+            mixer.list_tracks()
+            idx = input("Track Index zum Entfernen: ").strip()
+            mixer.remove_track(int(idx))
 
-            if idx:
-                device_index = devices[int(idx)]['index']  # ← echter sd-Index
+        elif choice == '5':
+            mixer.list_tracks()
+
+        elif choice == 'd':
+            if not mixer._tracks and not mixer._mic_enabled:
+                print("Mindestens eine Quelle hinzufügen!")
             else:
-                device_index = None
-
-            enable_mic(device_index)
-            break
-
-        else:
-            print("Bitte 1, 2 oder 3 eingeben.")
+                break
 
 
 def main():
@@ -119,4 +117,4 @@ def _change_volume(delta: float):
 
 if __name__ == "__main__":
     main()
->>>>>>> Stashed changes
+
