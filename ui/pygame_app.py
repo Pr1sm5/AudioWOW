@@ -1,0 +1,753 @@
+import os
+import tkinter as tk
+from tkinter import filedialog
+
+import numpy as np
+
+from audio.input_handler import get_microphone_devices
+from audio import mixer
+from audio.processor import (
+    active_effects,
+    clear_sources,
+    enable_mic,
+    get_latest_signal,
+    load_audio_data,
+    load_file,
+    set_volume,
+    start_stream,
+)
+from effects.delay import apply_delay, reset_delay, set_delay, set_feedback
+from effects.distortion import apply_distortion, reset_distortion, set_drive, set_level
+from effects.highpass import apply_highpass, reset_highpass
+from effects.highpass import set_cutoff as set_highpass_cutoff
+from effects.lowpass import apply_lowpass, reset_lowpass
+from effects.lowpass import set_cutoff as set_lowpass_cutoff
+from effects.reverb import apply_reverb, reset as reset_reverb
+from effects.reverb import set_mix as set_reverb_mix
+
+
+WIDTH = 1180
+HEIGHT = 980
+FPS = 60
+
+COLORS = {
+    "bg": (14, 16, 20),
+    "panel": (29, 34, 42),
+    "panel_2": (38, 45, 54),
+    "text": (235, 241, 245),
+    "muted": (140, 154, 164),
+    "line": (71, 84, 96),
+    "green": (102, 224, 157),
+    "cyan": (83, 196, 255),
+    "pink": (255, 105, 156),
+    "amber": (255, 190, 92),
+    "red": (255, 104, 104),
+}
+
+EFFECTS = {
+    "reverb": ("Reverb", apply_reverb, reset_reverb, COLORS["cyan"]),
+    "delay": ("Delay", apply_delay, reset_delay, COLORS["amber"]),
+    "lowpass": ("Lowpass", apply_lowpass, reset_lowpass, COLORS["green"]),
+    "highpass": ("Highpass", apply_highpass, reset_highpass, COLORS["pink"]),
+    "distortion": ("Distort", apply_distortion, reset_distortion, COLORS["red"]),
+}
+
+TRACK_FX_SLIDERS = [
+    ("reverb", "mix", "Reverb mix", 0.0, 1.0),
+    ("delay", "seconds", "Delay seconds", 0.01, 2.0),
+    ("delay", "feedback", "Delay feedback", 0.0, 0.9),
+    ("delay", "mix", "Delay mix", 0.0, 1.0),
+    ("lowpass", "cutoff", "Lowpass cutoff", 20.0, 20000.0),
+    ("highpass", "cutoff", "Highpass cutoff", 20.0, 20000.0),
+    ("distortion", "drive", "Distortion drive", 1.0, 40.0),
+    ("distortion", "level", "Distortion level", 0.0, 1.0),
+]
+
+
+class Button:
+    def __init__(self, rect, label, action, color=None):
+        self.rect = pygame.Rect(rect)
+        self.label = label
+        self.action = action
+        self.color = color or COLORS["panel_2"]
+
+    def draw(self, screen, fonts, mouse_pos):
+        hovered = self.rect.collidepoint(mouse_pos)
+        color = tuple(min(255, channel + 16) for channel in self.color) if hovered else self.color
+        pygame.draw.rect(screen, color, self.rect, border_radius=8)
+        pygame.draw.rect(screen, COLORS["line"], self.rect, width=1, border_radius=8)
+        draw_text(screen, fonts["button"], self.label, self.rect.center, COLORS["text"], center=True)
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.rect.collidepoint(event.pos):
+            self.action()
+            return True
+        return False
+
+
+class TogglePad:
+    def __init__(self, rect, key, label, color, action):
+        self.rect = pygame.Rect(rect)
+        self.key = key
+        self.label = label
+        self.color = color
+        self.action = action
+        self.enabled = False
+
+    def draw(self, screen, fonts, mouse_pos):
+        hovered = self.rect.collidepoint(mouse_pos)
+        bg = self.color if self.enabled else COLORS["panel_2"]
+        if hovered and not self.enabled:
+            bg = tuple(min(255, channel + 18) for channel in bg)
+        pygame.draw.rect(screen, bg, self.rect, border_radius=8)
+        pygame.draw.rect(screen, self.color, self.rect, width=2, border_radius=8)
+        label_color = COLORS["bg"] if self.enabled else COLORS["text"]
+        draw_text(screen, fonts["button"], self.label, self.rect.center, label_color, center=True)
+        led_rect = pygame.Rect(self.rect.right - 18, self.rect.top + 10, 8, 8)
+        pygame.draw.circle(screen, COLORS["bg"] if self.enabled else self.color, led_rect.center, 4)
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.rect.collidepoint(event.pos):
+            self.enabled = not self.enabled
+            self.action(self.key, self.enabled)
+            return True
+        return False
+
+
+class Slider:
+    def __init__(self, rect, label, minimum, maximum, value, setter, value_format=None):
+        self.rect = pygame.Rect(rect)
+        self.label = label
+        self.minimum = minimum
+        self.maximum = maximum
+        self.value = value
+        self.setter = setter
+        self.value_format = value_format or format_slider_value
+        self.dragging = False
+
+    def draw(self, screen, fonts, mouse_pos):
+        if self.label:
+            draw_text(screen, fonts["small"], self.label, (self.rect.left, self.rect.top - 18), COLORS["muted"])
+        track = pygame.Rect(self.rect.left, self.rect.centery - 3, self.rect.width, 6)
+        pygame.draw.rect(screen, COLORS["line"], track, border_radius=3)
+        fill = pygame.Rect(track.left, track.top, self._knob_x() - track.left, track.height)
+        pygame.draw.rect(screen, COLORS["cyan"], fill, border_radius=3)
+        knob_color = COLORS["text"] if self.rect.collidepoint(mouse_pos) or self.dragging else COLORS["cyan"]
+        pygame.draw.circle(screen, knob_color, (self._knob_x(), self.rect.centery), 9)
+        value_text = self.value_format(self.value)
+        if self.label:
+            draw_text(screen, fonts["small"], value_text, (self.rect.right, self.rect.top - 18), COLORS["text"], right=True)
+        else:
+            draw_text(screen, fonts["small"], value_text, (self.rect.right + 52, self.rect.centery - 8), COLORS["text"], right=True)
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self._hit_area().collidepoint(event.pos):
+            self.dragging = True
+            self._set_from_x(event.pos[0])
+            return True
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.dragging = False
+        if event.type == pygame.MOUSEMOTION and self.dragging:
+            self._set_from_x(event.pos[0])
+            return True
+        return False
+
+    def _hit_area(self):
+        return self.rect.inflate(8, 20)
+
+    def _knob_x(self):
+        progress = (self.value - self.minimum) / (self.maximum - self.minimum)
+        return int(self.rect.left + progress * self.rect.width)
+
+    def _set_from_x(self, x_pos):
+        progress = max(0.0, min(1.0, (x_pos - self.rect.left) / self.rect.width))
+        self.value = self.minimum + progress * (self.maximum - self.minimum)
+        self.setter(self.value)
+
+
+def draw_text(screen, font, text, pos, color, center=False, right=False):
+    surface = font.render(str(text), True, color)
+    rect = surface.get_rect()
+    if center:
+        rect.center = pos
+    elif right:
+        rect.topright = pos
+    else:
+        rect.topleft = pos
+    screen.blit(surface, rect)
+
+
+def format_slider_value(value):
+    if value >= 100:
+        return f"{value:.0f}"
+    if value >= 10:
+        return f"{value:.1f}"
+    return f"{value:.2f}"
+
+
+class AudioWowPygame:
+    def __init__(self):
+        pygame.init()
+        pygame.display.set_caption("AudioWOW")
+        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        self.clock = pygame.time.Clock()
+        self.fonts = {
+            "title": pygame.font.SysFont("Segoe UI", 34, bold=True),
+            "section": pygame.font.SysFont("Segoe UI", 18, bold=True),
+            "button": pygame.font.SysFont("Segoe UI", 16, bold=True),
+            "body": pygame.font.SysFont("Segoe UI", 16),
+            "small": pygame.font.SysFont("Segoe UI", 13),
+        }
+        self.stream = None
+        self.status = "Ready"
+        self.source = "No source selected"
+        self.error = ""
+        self.phase = 0.0
+        self.mic_devices = []
+        self.mic_index = 0
+        self.sine_freq = 440.0
+        self.sine_duration = 5.0
+        self.running = True
+        self.controls = []
+        self.effect_pads = []
+        self.track_controls = []
+        self.track_snapshot = []
+        self.track_effect_pads = []
+        self.track_fx_controls = []
+        self.track_fx_snapshot = None
+        self.selected_track_index = None
+        self._refresh_mics(silent=True)
+        self._build_controls()
+
+    def _build_controls(self):
+        self.controls = [
+            Button((42, 142, 136, 44), "Add WAV", self._choose_wav, COLORS["cyan"]),
+            Button((194, 142, 136, 44), "Add Sine", self._use_sine, COLORS["green"]),
+            Button((346, 142, 136, 44), "Mic", self._use_microphone, COLORS["pink"]),
+            Button((498, 142, 116, 44), "Refresh", lambda: self._refresh_mics(), COLORS["panel_2"]),
+            Button((42, 202, 136, 36), "Next Mic", self._next_mic, COLORS["panel_2"]),
+            Button((42, 922, 116, 40), "Resume", self._resume_stream, COLORS["green"]),
+            Button((172, 922, 102, 40), "Stop", self._stop_stream, COLORS["red"]),
+            Button((288, 922, 132, 40), "Clear FX", self._clear_effects, COLORS["panel_2"]),
+            Button((434, 922, 148, 40), "Clear Sources", self._clear_sources, COLORS["panel_2"]),
+            Button((596, 922, 136, 40), "All Track FX", self._select_all_tracks, COLORS["cyan"]),
+        ]
+
+        self.effect_pads = []
+        x = 42
+        for key, (label, _effect_fn, _reset_fn, color) in EFFECTS.items():
+            pad = TogglePad((x, 312, 162, 62), key, label, color, self._toggle_effect)
+            self.effect_pads.append(pad)
+            x += 184
+
+        self.sliders = [
+            Slider((224, 218, 300, 28), "Sine frequency", 20.0, 20000.0, self.sine_freq, self._set_sine_freq),
+            Slider((572, 218, 260, 28), "Sine duration", 0.25, 30.0, self.sine_duration, self._set_sine_duration),
+            Slider((42, 434, 260, 28), "Master volume", 0.0, 2.0, 1.0, set_volume, lambda value: f"{int(value * 100)}%"),
+            Slider((342, 434, 240, 28), "Reverb mix", 0.0, 1.0, 0.5, set_reverb_mix),
+            Slider((622, 434, 240, 28), "Delay seconds", 0.01, 2.0, 0.35, set_delay),
+            Slider((902, 434, 210, 28), "Delay feedback", 0.0, 0.9, 0.4, set_feedback),
+            Slider((42, 522, 260, 28), "Lowpass cutoff", 20.0, 20000.0, 1000.0, set_lowpass_cutoff),
+            Slider((342, 522, 240, 28), "Highpass cutoff", 20.0, 20000.0, 500.0, set_highpass_cutoff),
+            Slider((622, 522, 240, 28), "Distortion drive", 1.0, 20.0, 8.0, set_drive),
+            Slider((902, 522, 210, 28), "Distortion level", 0.0, 1.0, 0.7, set_level),
+        ]
+        self._sync_track_controls()
+        self._sync_track_fx_controls(force=True)
+
+    def run(self):
+        while self.running:
+            mouse_pos = pygame.mouse.get_pos()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                elif event.type == pygame.KEYDOWN:
+                    self._handle_key(event.key)
+                else:
+                    self._handle_control_event(event)
+
+            self._draw(mouse_pos)
+            pygame.display.flip()
+            self.clock.tick(FPS)
+
+        self._stop_stream()
+        pygame.quit()
+
+    def _handle_key(self, key):
+        if key == pygame.K_ESCAPE:
+            self.running = False
+        elif key == pygame.K_SPACE:
+            if self.stream is None:
+                self._resume_stream()
+            else:
+                self._stop_stream()
+        elif key == pygame.K_w:
+            self._choose_wav()
+        elif key == pygame.K_s:
+            self._use_sine()
+        elif key == pygame.K_m:
+            self._use_microphone()
+
+    def _handle_control_event(self, event):
+        for control in self.controls:
+            if control.handle_event(event):
+                return
+        for pad in self.effect_pads:
+            if pad.handle_event(event):
+                return
+        for slider in self.sliders:
+            if slider.handle_event(event):
+                return
+        for control in self.track_controls:
+            if control.handle_event(event):
+                return
+        for pad in self.track_effect_pads:
+            if pad.handle_event(event):
+                return
+        for control in self.track_fx_controls:
+            if control.handle_event(event):
+                return
+
+    def _draw(self, mouse_pos):
+        self.screen.fill(COLORS["bg"])
+        self._draw_header()
+        self._draw_panel((28, 118, 1108, 144), "Sources")
+        self._draw_panel((28, 292, 924, 104), "Effects")
+        self._draw_panel((28, 412, 1108, 168), "Global Controls")
+        self._draw_panel((28, 600, 1108, 144), "Tracks")
+        self._draw_panel((28, 764, 1108, 150), "Selected Track Effects")
+        self._draw_visualizer()
+        self._draw_footer()
+
+        for control in self.controls:
+            control.draw(self.screen, self.fonts, mouse_pos)
+        for pad in self.effect_pads:
+            pad.draw(self.screen, self.fonts, mouse_pos)
+        for slider in self.sliders:
+            slider.draw(self.screen, self.fonts, mouse_pos)
+        self._draw_tracks(mouse_pos)
+        self._draw_track_fx(mouse_pos)
+
+    def _draw_header(self):
+        draw_text(self.screen, self.fonts["title"], "AudioWOW", (34, 26), COLORS["text"])
+        draw_text(self.screen, self.fonts["body"], self.status, (36, 68), COLORS["green"])
+        source = self.source
+        if len(source) > 86:
+            source = source[:83] + "..."
+        draw_text(self.screen, self.fonts["small"], source, (36, 92), COLORS["muted"])
+        if self.error:
+            draw_text(self.screen, self.fonts["small"], self.error, (1136, 92), COLORS["red"], right=True)
+
+    def _draw_panel(self, rect, title):
+        panel = pygame.Rect(rect)
+        pygame.draw.rect(self.screen, COLORS["panel"], panel, border_radius=12)
+        pygame.draw.rect(self.screen, COLORS["line"], panel, width=1, border_radius=12)
+        draw_text(self.screen, self.fonts["section"], title, (panel.left + 14, panel.top + 12), COLORS["text"])
+
+    def _draw_visualizer(self):
+        rect = pygame.Rect(660, 142, 446, 96)
+        pygame.draw.rect(self.screen, (10, 12, 16), rect, border_radius=8)
+        pygame.draw.rect(self.screen, COLORS["line"], rect, width=1, border_radius=8)
+
+        signal = get_latest_signal()
+        peak = float(np.max(np.abs(signal))) if signal.size else 0.0
+        points = self._signal_points(signal, rect)
+        if len(points) > 1:
+            pygame.draw.lines(self.screen, COLORS["cyan"], False, points, 2)
+        else:
+            pygame.draw.line(self.screen, COLORS["line"], (rect.left + 10, rect.centery), (rect.right - 10, rect.centery), 1)
+
+        draw_text(self.screen, self.fonts["small"], "Live signal", (rect.left + 12, rect.top + 10), COLORS["muted"])
+        draw_text(self.screen, self.fonts["small"], f"Peak {peak:.2f}", (rect.right - 12, rect.top + 10), COLORS["muted"], right=True)
+
+    def _signal_points(self, signal, rect):
+        if signal.size < 2:
+            return []
+
+        left = rect.left + 10
+        right = rect.right - 10
+        top = rect.top + 24
+        bottom = rect.bottom - 10
+        width = right - left
+        height = bottom - top
+
+        if width <= 1 or height <= 1:
+            return []
+
+        step = max(1, signal.size // width)
+        sampled = signal[::step][:width]
+        peak = max(0.05, float(np.max(np.abs(sampled))))
+        center_y = top + height / 2
+        amplitude = height * 0.45
+
+        points = []
+        for index, sample in enumerate(sampled):
+            x = left + index
+            normalized = max(-1.0, min(1.0, float(sample) / peak))
+            y = center_y - normalized * amplitude
+            points.append((x, y))
+        return points
+
+    def _draw_footer(self):
+        mic_label = self._current_mic_label()
+        draw_text(self.screen, self.fonts["small"], f"Mic: {mic_label}", (708, 928), COLORS["muted"])
+        draw_text(self.screen, self.fonts["small"], "Keys: W add WAV, S add sine, M mic, Space stop/resume, Esc quit", (708, 950), COLORS["muted"])
+
+    def _draw_tracks(self, mouse_pos):
+        if not any(getattr(control, "dragging", False) for control in self.track_controls):
+            self._sync_track_controls()
+        tracks = mixer.get_tracks()
+        if not tracks:
+            draw_text(self.screen, self.fonts["body"], "No tracks loaded yet", (48, 652), COLORS["muted"])
+            return
+
+        for track in tracks[:4]:
+            y = 640 + track["index"] * 24
+            name = track["name"]
+            if len(name) > 36:
+                name = name[:33] + "..."
+            flags = []
+            if track["muted"]:
+                flags.append("MUTE")
+            if track["solo"]:
+                flags.append("SOLO")
+            if track["index"] == self.selected_track_index:
+                flags.append("SELECTED")
+            flag_text = f" {' / '.join(flags)}" if flags else ""
+            draw_text(self.screen, self.fonts["small"], f"{track['index'] + 1}. {name}{flag_text}", (48, y - 13), COLORS["text"])
+
+        if len(tracks) > 4:
+            draw_text(self.screen, self.fonts["small"], f"+ {len(tracks) - 4} more track(s)", (984, 706), COLORS["muted"])
+
+        for control in self.track_controls:
+            control.draw(self.screen, self.fonts, mouse_pos)
+
+    def _draw_track_fx(self, mouse_pos):
+        if not any(getattr(control, "dragging", False) for control in self.track_fx_controls):
+            self._sync_track_fx_controls()
+        if self.selected_track_index is None or (self.selected_track_index != -1 and self.selected_track_index >= mixer.track_count()):
+            draw_text(self.screen, self.fonts["body"], "Select a track to edit its own effects", (48, 810), COLORS["muted"])
+            return
+
+        tracks = mixer.get_tracks()
+        if self.selected_track_index == -1:
+            draw_text(self.screen, self.fonts["small"], "Editing: all loaded tracks", (48, 792), COLORS["muted"])
+        else:
+            track = tracks[self.selected_track_index]
+            name = track["name"]
+            if len(name) > 44:
+                name = name[:41] + "..."
+            draw_text(self.screen, self.fonts["small"], f"Editing: {name}", (48, 792), COLORS["muted"])
+
+        for pad in self.track_effect_pads:
+            pad.draw(self.screen, self.fonts, mouse_pos)
+        for control in self.track_fx_controls:
+            control.draw(self.screen, self.fonts, mouse_pos)
+
+    def _choose_wav(self):
+        filepath = choose_wav_file()
+        if not filepath:
+            return
+        try:
+            load_file(filepath)
+            self.source = f"Added WAV: {os.path.basename(filepath)}"
+            self.selected_track_index = mixer.track_count() - 1
+            self._sync_track_controls(force=True)
+            self._sync_track_fx_controls(force=True)
+            self._ensure_stream()
+        except Exception as exc:
+            self._set_error("Could not load WAV", exc)
+
+    def _use_sine(self):
+        try:
+            data = self._generate_sine(self.sine_freq, self.sine_duration)
+            load_audio_data(data)
+            self.source = f"Added sine: {self.sine_freq:.1f} Hz for {self.sine_duration:.1f} sec"
+            self.selected_track_index = mixer.track_count() - 1
+            self._sync_track_controls(force=True)
+            self._sync_track_fx_controls(force=True)
+            self._ensure_stream()
+        except Exception as exc:
+            self._set_error("Could not start sine", exc)
+
+    def _use_microphone(self):
+        try:
+            device_index = None
+            if self.mic_devices:
+                device_index = self.mic_devices[self.mic_index]["index"]
+            self._stop_stream()
+            enable_mic(device_index)
+            self.source = f"Microphone: {self._current_mic_label()}"
+            self._start_stream()
+        except Exception as exc:
+            self._set_error("Could not start mic", exc)
+
+    def _refresh_mics(self, silent=False):
+        try:
+            self.mic_devices = get_microphone_devices()
+            self.mic_index = min(self.mic_index, max(0, len(self.mic_devices) - 1))
+            if not silent:
+                self.status = "Microphones refreshed"
+                self.error = ""
+        except Exception as exc:
+            self.mic_devices = []
+            if not silent:
+                self._set_error("Could not list microphones", exc)
+
+    def _next_mic(self):
+        if not self.mic_devices:
+            self.status = "No microphone found"
+            return
+        self.mic_index = (self.mic_index + 1) % len(self.mic_devices)
+        self.status = "Microphone selected"
+        self.error = ""
+
+    def _toggle_effect(self, key, enabled):
+        name, effect_fn, reset_fn, _color = EFFECTS[key]
+        if enabled:
+            if effect_fn not in active_effects:
+                active_effects.append(effect_fn)
+            self.status = f"{name} enabled"
+        else:
+            if effect_fn in active_effects:
+                active_effects.remove(effect_fn)
+            reset_fn()
+            self.status = f"{name} disabled"
+        self.error = ""
+
+    def _clear_effects(self):
+        active_effects.clear()
+        for pad in self.effect_pads:
+            pad.enabled = False
+            EFFECTS[pad.key][2]()
+        for index in range(mixer.track_count()):
+            for key in EFFECTS:
+                mixer.set_track_effect_enabled(index, key, False)
+        self.status = "Effects cleared"
+        self.error = ""
+        self._sync_track_fx_controls(force=True)
+
+    def _clear_sources(self):
+        self._stop_stream()
+        clear_sources()
+        self.source = "No source selected"
+        self.status = "Sources cleared"
+        self.error = ""
+        self.selected_track_index = None
+        self._sync_track_controls(force=True)
+        self._sync_track_fx_controls(force=True)
+
+    def _set_sine_freq(self, value):
+        self.sine_freq = value
+
+    def _set_sine_duration(self, value):
+        self.sine_duration = value
+
+    def _generate_sine(self, frequency, duration, samplerate=44100):
+        t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
+        return np.sin(2 * np.pi * frequency * t).astype("float32")
+
+    def _prepare_new_source(self):
+        self._stop_stream()
+        clear_sources()
+
+    def _ensure_stream(self):
+        if self.stream is None:
+            self._start_stream()
+        else:
+            self.status = "Playing"
+            self.error = ""
+
+    def _resume_stream(self):
+        if not mixer.has_sources():
+            self.status = "No source to resume"
+            return
+        self._start_stream()
+
+    def _start_stream(self):
+        self._stop_stream()
+        self.stream = start_stream()
+        self.stream.start()
+        self.status = "Playing"
+        self.error = ""
+
+    def _stop_stream(self):
+        if self.stream is None:
+            self.status = "Stopped"
+            return
+        try:
+            self.stream.stop()
+            self.stream.close()
+        finally:
+            self.stream = None
+            self.status = "Stopped"
+
+    def _set_track_volume(self, index, value):
+        mixer.set_track_volume(index, value)
+
+    def _toggle_track_mute(self, index):
+        tracks = mixer.get_tracks()
+        if 0 <= index < len(tracks):
+            mixer.set_track_muted(index, not tracks[index]["muted"])
+            self._sync_track_controls(force=True)
+
+    def _toggle_track_solo(self, index):
+        mixer.solo_track(index)
+        self._sync_track_controls(force=True)
+
+    def _remove_track(self, index):
+        mixer.remove_track(index)
+        if self.selected_track_index == index:
+            self.selected_track_index = None
+        elif self.selected_track_index is not None and self.selected_track_index > index:
+            self.selected_track_index -= 1
+        self._sync_track_controls(force=True)
+        self._sync_track_fx_controls(force=True)
+
+    def _select_track(self, index):
+        if 0 <= index < mixer.track_count():
+            self.selected_track_index = index
+            self.status = f"Track {index + 1} selected"
+            self._sync_track_controls(force=True)
+            self._sync_track_fx_controls(force=True)
+
+    def _select_all_tracks(self):
+        if mixer.track_count() == 0:
+            self.status = "No tracks loaded"
+            return
+        self.selected_track_index = -1
+        self.status = "All tracks selected for FX"
+        self._sync_track_controls(force=True)
+        self._sync_track_fx_controls(force=True)
+
+    def _sync_track_controls(self, force=False):
+        tracks = mixer.get_tracks()[:4]
+        snapshot = [(track["index"], track["muted"], track["solo"], track["name"]) for track in tracks]
+        if not force and snapshot == self.track_snapshot:
+            return
+
+        self.track_snapshot = snapshot
+        self.track_controls = []
+        for row, track in enumerate(tracks):
+            index = track["index"]
+            y = 652 + row * 24
+            self.track_controls.append(
+                Slider(
+                    (370, y - 2, 300, 20),
+                    "",
+                    0.0,
+                    2.0,
+                    track["volume"],
+                    lambda value, track_index=index: self._set_track_volume(track_index, value),
+                    lambda value: f"{int(value * 100)}%",
+                )
+            )
+            mute_label = "Unmute" if track["muted"] else "Mute"
+            solo_label = "Solo*" if track["solo"] else "Solo"
+            self.track_controls.append(Button((702, y - 12, 74, 28), mute_label, lambda track_index=index: self._toggle_track_mute(track_index), COLORS["panel_2"]))
+            self.track_controls.append(Button((790, y - 12, 68, 28), solo_label, lambda track_index=index: self._toggle_track_solo(track_index), COLORS["panel_2"]))
+            self.track_controls.append(Button((872, y - 12, 82, 28), "Select", lambda track_index=index: self._select_track(track_index), COLORS["cyan"]))
+            self.track_controls.append(Button((968, y - 12, 82, 28), "Remove", lambda track_index=index: self._remove_track(track_index), COLORS["red"]))
+
+    def _toggle_track_effect(self, key, enabled):
+        if self.selected_track_index is None:
+            return
+        for index in self._target_track_indices():
+            mixer.set_track_effect_enabled(index, key, enabled)
+        target = "All tracks" if self.selected_track_index == -1 else f"Track {self.selected_track_index + 1}"
+        self.status = f"{target}: {EFFECTS[key][0]} {'on' if enabled else 'off'}"
+        self._sync_track_fx_controls(force=True)
+
+    def _set_track_effect_param(self, effect_name, param_name, value):
+        if self.selected_track_index is None:
+            return
+        for index in self._target_track_indices():
+            mixer.set_track_effect_param(index, effect_name, param_name, value)
+
+    def _target_track_indices(self):
+        if self.selected_track_index == -1:
+            return range(mixer.track_count())
+        if 0 <= self.selected_track_index < mixer.track_count():
+            return [self.selected_track_index]
+        return []
+
+    def _sync_track_fx_controls(self, force=False):
+        if self.selected_track_index is None or (self.selected_track_index != -1 and self.selected_track_index >= mixer.track_count()):
+            snapshot = None
+            if not force and snapshot == self.track_fx_snapshot:
+                return
+            self.track_fx_snapshot = snapshot
+            self.track_effect_pads = []
+            self.track_fx_controls = []
+            return
+
+        if self.selected_track_index == -1:
+            all_effects = [mixer.get_track_effects(index) for index in range(mixer.track_count())]
+            enabled = set.intersection(*all_effects) if all_effects else set()
+            params = mixer.get_track_effect_params(0) if mixer.track_count() else mixer.get_track_effect_params(-1)
+        else:
+            enabled = mixer.get_track_effects(self.selected_track_index)
+            params = mixer.get_track_effect_params(self.selected_track_index)
+        snapshot = (
+            self.selected_track_index,
+            tuple(sorted(enabled)),
+            tuple((effect, param, params[effect][param]) for effect, param, _label, _min, _max in TRACK_FX_SLIDERS),
+        )
+        if not force and snapshot == self.track_fx_snapshot:
+            return
+
+        self.track_fx_snapshot = snapshot
+        self.track_effect_pads = []
+        x = 226
+        for key, (label, _effect_fn, _reset_fn, color) in EFFECTS.items():
+            pad = TogglePad((x, 790, 104, 34), key, label, color, self._toggle_track_effect)
+            pad.enabled = key in enabled
+            self.track_effect_pads.append(pad)
+            x += 112
+
+        self.track_fx_controls = []
+        slider_positions = [
+            (42, 838, 124), (206, 838, 124), (370, 838, 124), (534, 838, 124),
+            (698, 838, 124), (862, 838, 124), (42, 898, 124), (206, 898, 124),
+        ]
+        for (effect_name, param_name, label, minimum, maximum), (x, y, width) in zip(TRACK_FX_SLIDERS, slider_positions):
+            value = params[effect_name][param_name]
+            self.track_fx_controls.append(
+                Slider(
+                    (x, y, width, 20),
+                    label,
+                    minimum,
+                    maximum,
+                    value,
+                    lambda slider_value, effect=effect_name, param=param_name: self._set_track_effect_param(effect, param, slider_value),
+                )
+            )
+
+    def _current_mic_label(self):
+        if not self.mic_devices:
+            return "default input"
+        device = self.mic_devices[self.mic_index]
+        return f"{device['name']} ({device['index']})"
+
+    def _set_error(self, title, exc):
+        self.status = title
+        self.error = str(exc)
+
+
+def choose_wav_file():
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    filepath = filedialog.askopenfilename(
+        title="Choose WAV file",
+        filetypes=[("WAV files", "*.wav"), ("All files", "*.*")],
+    )
+    root.destroy()
+    return filepath
+
+
+def run_ui():
+    global pygame
+    import pygame
+
+    AudioWowPygame().run()

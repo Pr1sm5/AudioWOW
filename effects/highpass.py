@@ -2,12 +2,18 @@ import numpy as np
 
 _highpass_last_input = None
 _highpass_last_output = None
+_cutoff_hz = 500.0
+
+
+def set_cutoff(cutoff_hz: float):
+    global _cutoff_hz
+    _cutoff_hz = max(20.0, min(20000.0, cutoff_hz))
 
 
 def apply_highpass(
     chunk: np.ndarray,
     samplerate: int,
-    cutoff_hz: float = 500.0
+    cutoff_hz: float = None
 ) -> np.ndarray:
     """
     Einfacher Highpass-Filter.
@@ -15,6 +21,7 @@ def apply_highpass(
     """
     global _highpass_last_input, _highpass_last_output
 
+    cutoff_hz = _cutoff_hz if cutoff_hz is None else cutoff_hz
     dt = 1.0 / samplerate
     rc = 1.0 / (2.0 * np.pi * cutoff_hz)
     alpha = rc / (rc + dt)

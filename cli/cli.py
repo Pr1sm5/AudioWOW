@@ -98,7 +98,7 @@ def prompt_input_source() -> None:
             mixer.list_tracks()
 
         elif choice == 'd':
-            if not mixer._tracks and not mixer._mic_enabled:
+            if not mixer.has_sources():
                 print("Mindestens eine Quelle hinzufügen!")
             else:
                 break
@@ -208,9 +208,11 @@ def _track_fx_menu() -> None:
         return
 
     name, effect_fn, reset_fn = EFFECTS[key]
-    track = mixer._tracks[idx]
+    if idx >= mixer.track_count():
+        print("Unbekannter Track.")
+        return
 
-    if effect_fn in track['effects']:
+    if mixer.track_has_effect(idx, effect_fn):
         mixer.remove_track_effect(idx, effect_fn)
         if reset_fn:
             reset_fn()
@@ -304,8 +306,8 @@ def run() -> None:
             elif key == 's':
                 stream.stop()
                 active_effects.clear()
-                mixer._tracks.clear()
-                mixer._mic_enabled = False
+                mixer.clear_tracks()
+                mixer.disable_mic()
                 prompt_input_source()
                 stream.start()
 
@@ -324,7 +326,7 @@ def run() -> None:
                 if idx.isdigit():
                     mixer.solo_track(int(idx))
                 else:
-                    mixer._solo_index = None
+                    mixer.clear_solo()
                     print("Solo aufgehoben.")
 
             elif key == 'm':  # mute

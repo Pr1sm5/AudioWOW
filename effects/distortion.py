@@ -1,7 +1,7 @@
 import numpy as np
 
-_gain = 8.0   # ← neu
-_mix  = 0.7   # ← neu
+_gain = 8.0
+_mix = 0.7
 
 
 def set_gain(value: float):
@@ -14,12 +14,27 @@ def set_mix(value: float):
     _mix = max(0.0, min(1.0, value))
 
 
-def apply_distortion(chunk: np.ndarray, samplerate: int) -> np.ndarray:
-    dry      = chunk
-    driven   = chunk * _gain          # ← global statt Parameter
+def set_drive(gain: float):
+    set_gain(gain)
+
+
+def set_level(mix: float):
+    set_mix(mix)
+
+
+def apply_distortion(
+    chunk: np.ndarray,
+    samplerate: int,
+    gain: float = None,
+    mix: float = None,
+) -> np.ndarray:
+    gain = _gain if gain is None else gain
+    mix = _mix if mix is None else mix
+    dry = chunk
+    driven = chunk * gain
     distorted = np.tanh(driven)
-    output   = dry * (1.0 - _mix) + distorted * _mix  # ← global
-    return np.clip(output, -1.0, 1.0).astype('float32')
+    output = dry * (1.0 - mix) + distorted * mix
+    return np.clip(output, -1.0, 1.0).astype("float32")
 
 
 def reset_distortion():
