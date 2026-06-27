@@ -6,10 +6,10 @@ _mic_volume = 1.0
 _solo_index = None
 
 DEFAULT_FX_PARAMS = {
-    'reverb': {'mix': 0.5},
-    'delay': {'seconds': 0.35, 'feedback': 0.4, 'mix': 0.5},
-    'lowpass': {'cutoff': 1000.0},
-    'highpass': {'cutoff': 500.0},
+    'reverb':     {'dry': 1.0, 'wet': 0.5},
+    'delay':      {'seconds': 0.35, 'feedback': 0.4, 'dry': 1.0, 'wet': 0.5},
+    'lowpass':    {'cutoff': 1000.0},
+    'highpass':   {'cutoff': 500.0},
     'distortion': {'drive': 8.0, 'level': 0.7},
 }
 
@@ -226,8 +226,10 @@ def _effect_name(effect_fn) -> str:
 
 
 def _clamp_effect_param(effect_name: str, param_name: str, value: float) -> float:
-    if param_name in ('mix', 'level'):
+    if param_name in ('wet', 'level'):
         return max(0.0, min(1.0, value))
+    if param_name == 'dry':
+        return max(1.0, min(2.0, value))
     if effect_name == 'delay' and param_name == 'feedback':
         return max(0.0, min(0.9, value))
     if effect_name == 'delay' and param_name == 'seconds':
@@ -280,8 +282,9 @@ def _apply_track_reverb(chunk: np.ndarray, samplerate: int, params: dict, state:
         buffer[(pos + i) % max_delay_samples] = chunk[i]
 
     state['pos'] = (pos + len(chunk)) % max_delay_samples
-    mix = params['mix']
-    return np.clip(chunk * (1.0 - mix) + wet * mix, -1.0, 1.0).astype('float32')
+    mix = params.get('wet', 0.5)
+    dry = params.get('dry', 1.0)
+    return np.clip(chunk * dry + wet * mix, -1.0, 1.0).astype('float32')
 
 
 def _apply_track_delay(chunk: np.ndarray, samplerate: int, params: dict, state: dict) -> np.ndarray:
@@ -297,10 +300,12 @@ def _apply_track_delay(chunk: np.ndarray, samplerate: int, params: dict, state: 
 
     pos = state.get('pos', 0)
     output = np.zeros_like(chunk)
+    dry_gain = params.get('dry', 1.0)
+    wet_gain = params.get('wet', 0.5)
     for i in range(len(chunk)):
-        dry = chunk[i]
+        dry     = chunk[i]
         delayed = buffer[pos]
-        output[i] = dry * (1.0 - params['mix']) + delayed * params['mix']
+        output[i] = dry * dry_gain + delayed * wet_gain
         buffer[pos] = dry + delayed * params['feedback']
         pos = (pos + 1) % delay_samples
 

@@ -16,18 +16,21 @@ from audio.processor import (
     set_volume,
     start_stream,
 )
-from effects.delay import apply_delay, reset_delay, set_delay, set_feedback
+
 from effects.distortion import apply_distortion, reset_distortion, set_drive, set_level
 from effects.highpass import apply_highpass, reset_highpass
 from effects.highpass import set_cutoff as set_highpass_cutoff
 from effects.lowpass import apply_lowpass, reset_lowpass
 from effects.lowpass import set_cutoff as set_lowpass_cutoff
-from effects.reverb import apply_reverb, reset as reset_reverb
-from effects.reverb import set_mix as set_reverb_mix
+from visualizer.spectrum import compute_spectrum, compute_waveform, peak_amplitude, dominant_frequency, reset as reset_spectrum
+from effects.reverb import apply_reverb, reset as reset_reverb, set_mix as set_reverb_mix
+from effects.reverb import set_dry as set_reverb_dry, set_wet as set_reverb_wet  # ← neu
+from effects.delay  import apply_delay, reset_delay, set_delay, set_feedback
+from effects.delay  import set_dry as set_delay_dry, set_wet as set_delay_wet    # ← neu
 
 
-WIDTH = 1180
-HEIGHT = 1040
+WIDTH  = 1180
+HEIGHT = 1120
 FPS = 60
 
 COLORS = {
@@ -53,14 +56,16 @@ EFFECTS = {
 }
 
 TRACK_FX_SLIDERS = [
-    ("reverb", "mix", "Reverb mix", 0.0, 1.0),
-    ("delay", "seconds", "Delay seconds", 0.01, 2.0),
-    ("delay", "feedback", "Delay feedback", 0.0, 0.9),
-    ("delay", "mix", "Delay mix", 0.0, 1.0),
-    ("lowpass", "cutoff", "Lowpass cutoff", 20.0, 20000.0),
-    ("highpass", "cutoff", "Highpass cutoff", 20.0, 20000.0),
-    ("distortion", "drive", "Distortion drive", 1.0, 40.0),
-    ("distortion", "level", "Distortion level", 0.0, 1.0),
+    ("reverb",     "dry",      "Reverb dry",        1.0,     2.0),
+    ("reverb",     "wet",      "Reverb wet",        0.0,     1.0),
+    ("delay",      "seconds",  "Delay time (s)",    0.01,    2.0),
+    ("delay",      "feedback", "Delay feedback",    0.0,     0.9),
+    ("delay",      "dry",      "Delay dry",         1.0,     2.0),
+    ("delay",      "wet",      "Delay wet",         0.0,     1.0),
+    ("lowpass",    "cutoff",   "Lowpass cutoff",    20.0, 20000.0),
+    ("highpass",   "cutoff",   "Highpass cutoff",   20.0, 20000.0),
+    ("distortion", "drive",    "Distortion drive",  1.0,    40.0),
+    ("distortion", "level",    "Distortion level",  0.0,     1.0),
 ]
 
 
@@ -216,6 +221,8 @@ class AudioWowPygame:
         self.track_fx_controls = []
         self.track_fx_snapshot = None
         self.selected_track_index = None
+        self.viz_mode = "waveform"   # "waveform" | "spectrum"
+        reset_spectrum()
         self._refresh_mics(silent=True)
         self._build_controls()
 
@@ -226,11 +233,13 @@ class AudioWowPygame:
             Button((346, 162, 136, 44), "Mic", self._use_microphone, COLORS["pink"]),
             Button((498, 162, 116, 44), "Refresh", lambda: self._refresh_mics(), COLORS["panel_2"]),
             Button((42, 222, 136, 36), "Next Mic", self._next_mic, COLORS["panel_2"]),
-            Button((42, 982, 116, 40), "Resume", self._resume_stream, COLORS["green"]),
-            Button((172, 982, 102, 40), "Stop", self._stop_stream, COLORS["red"]),
-            Button((288, 982, 132, 40), "Clear FX", self._clear_effects, COLORS["panel_2"]),
-            Button((434, 982, 148, 40), "Clear Sources", self._clear_sources, COLORS["panel_2"]),
-            Button((596, 982, 136, 40), "All Track FX", self._select_all_tracks, COLORS["cyan"]),
+            # In _build_controls, Footer Buttons: y: 982 → 1062
+            Button((42, 1062, 116, 40), "Resume", self._resume_stream, COLORS["green"]),
+            Button((172, 1062, 102, 40), "Stop", self._stop_stream, COLORS["red"]),
+            Button((288, 1062, 132, 40), "Clear FX", self._clear_effects, COLORS["panel_2"]),
+            Button((434, 1062, 148, 40), "Clear Sources", self._clear_sources, COLORS["panel_2"]),
+            Button((596, 1062, 136, 40), "All Track FX", self._select_all_tracks, COLORS["cyan"]),
+            Button((746, 1062, 136, 40), "Waveform/FFT", self._toggle_viz_mode, COLORS["panel_2"]),
         ]
 
         self.effect_pads = []
@@ -243,14 +252,23 @@ class AudioWowPygame:
         self.sliders = [
             Slider((224, 238, 300, 28), "Sine frequency", 20.0, 20000.0, self.sine_freq, self._set_sine_freq),
             Slider((572, 238, 260, 28), "Sine duration", 0.25, 30.0, self.sine_duration, self._set_sine_duration),
-            Slider((42, 482, 260, 28), "Master volume", 0.0, 2.0, 1.0, set_volume, lambda value: f"{int(value * 100)}%"),
-            Slider((342, 482, 240, 28), "Reverb mix", 0.0, 1.0, 0.5, set_reverb_mix),
-            Slider((622, 482, 240, 28), "Delay seconds", 0.01, 2.0, 0.35, set_delay),
-            Slider((902, 482, 210, 28), "Delay feedback", 0.0, 0.9, 0.4, set_feedback),
-            Slider((42, 560, 260, 28), "Lowpass cutoff", 20.0, 20000.0, 1000.0, set_lowpass_cutoff),
-            Slider((342, 560, 240, 28), "Highpass cutoff", 20.0, 20000.0, 500.0, set_highpass_cutoff),
-            Slider((622, 560, 240, 28), "Distortion drive", 1.0, 20.0, 8.0, set_drive),
-            Slider((902, 560, 210, 28), "Distortion level", 0.0, 1.0, 0.7, set_level),
+            Slider((42, 482, 260, 28), "Master volume", 0.0, 2.0, 1.0, set_volume, lambda v: f"{int(v * 100)}%"),
+
+            # Reverb
+            Slider((342, 482, 220, 28), "Reverb dry", 0.0, 1.0, 1.0, set_reverb_dry),
+            Slider((582, 482, 220, 28), "Reverb wet", 0.0, 1.0, 0.5, set_reverb_wet),
+
+            # Delay
+            Slider((42, 560, 200, 28), "Delay time (s)", 0.01, 2.0, 0.35, set_delay),
+            Slider((262, 560, 180, 28), "Delay feedback", 0.0, 0.9, 0.4, set_feedback),
+            Slider((462, 560, 180, 28), "Delay dry", 0.0, 1.0, 1.0, set_delay_dry),
+            Slider((662, 560, 180, 28), "Delay wet", 0.0, 1.0, 0.5, set_delay_wet),
+
+            # Filter & Distortion
+            Slider((862, 560, 180, 28), "Lowpass cutoff", 20.0, 20000.0, 1000.0, set_lowpass_cutoff),
+            Slider((42, 638, 260, 28), "Highpass cutoff", 20.0, 20000.0, 500.0, set_highpass_cutoff),
+            Slider((342, 638, 240, 28), "Distortion drive", 1.0, 20.0, 8.0, set_drive),
+            Slider((622, 638, 240, 28), "Distortion level", 0.0, 1.0, 0.7, set_level),
         ]
         self._sync_track_controls()
         self._sync_track_fx_controls(force=True)
@@ -313,9 +331,9 @@ class AudioWowPygame:
         self._draw_header()
         self._draw_panel((28, 118, 1108, 164), "Sources")
         self._draw_panel((28, 292, 924, 108), "Effects")
-        self._draw_panel((28, 420, 1108, 180), "Global Controls")
-        self._draw_panel((28, 620, 1108, 144), "Tracks")
-        self._draw_panel((28, 784, 1108, 190), "Selected Track Effects")
+        self._draw_panel((28, 420, 1108, 260), "Global Controls")  # h: 180 → 260
+        self._draw_panel((28, 700, 1108, 144), "Tracks")  # y: 620 → 700
+        self._draw_panel((28, 864, 1108, 190), "Selected Track Effects")  # y: 784 → 864
         self._draw_visualizer()
         self._draw_footer()
 
@@ -350,15 +368,101 @@ class AudioWowPygame:
         pygame.draw.rect(self.screen, COLORS["line"], rect, width=1, border_radius=8)
 
         signal = get_latest_signal()
-        peak = float(np.max(np.abs(signal))) if signal.size else 0.0
-        points = self._signal_points(signal, rect)
-        if len(points) > 1:
+
+        if self.viz_mode == "waveform":
+            self._draw_waveform(signal, rect)
+        else:
+            self._draw_spectrum(signal, rect)
+
+        # Modus-Label
+        mode_label = "Waveform" if self.viz_mode == "waveform" else "Spectrum (FFT)"
+        draw_text(self.screen, self.fonts["small"], mode_label,
+                  (rect.right - 12, rect.top + 10), COLORS["amber"], right=True)
+
+    def _draw_waveform(self, signal, rect):
+        """Waveform-Darstellung via spectrum.compute_waveform()"""
+        left   = rect.left + 10
+        right  = rect.right - 10
+        top    = rect.top + 24
+        bottom = rect.bottom - 8
+        width  = right - left
+        height = bottom - top
+
+        peak = peak_amplitude(signal)
+
+        t_ms, samples = compute_waveform(signal, n_points=width)
+
+        if len(samples) > 1:
+            center_y  = top + height / 2
+            amplitude = height * 0.45
+            points = [
+                (left + int(i * width / len(samples)),
+                 int(center_y - float(s) * amplitude))
+                for i, s in enumerate(samples)
+            ]
             pygame.draw.lines(self.screen, COLORS["cyan"], False, points, 2)
         else:
-            pygame.draw.line(self.screen, COLORS["line"], (rect.left + 10, rect.centery), (rect.right - 10, rect.centery), 1)
+            pygame.draw.line(self.screen, COLORS["line"],
+                             (left, rect.centery), (right, rect.centery), 1)
 
-        draw_text(self.screen, self.fonts["small"], "Live signal", (rect.left + 12, rect.top + 10), COLORS["muted"])
-        draw_text(self.screen, self.fonts["small"], f"Peak {peak:.2f}", (rect.right - 12, rect.top + 10), COLORS["muted"], right=True)
+        draw_text(self.screen, self.fonts["small"], "Live signal",
+                  (rect.left + 12, rect.top + 10), COLORS["muted"])
+        draw_text(self.screen, self.fonts["small"], f"Peak {peak:.2f}",
+                  (rect.right - 12, rect.bottom - 20), COLORS["muted"], right=True)
+
+    def _draw_spectrum(self, signal, rect):
+        """Spektrum-Darstellung via spectrum.compute_spectrum()"""
+        left   = rect.left + 10
+        right  = rect.right - 10
+        top    = rect.top + 24
+        bottom = rect.bottom - 8
+        width  = right - left
+        height = bottom - top
+
+        freqs, mags = compute_spectrum(signal, smooth=True)
+
+        if len(mags) < 2:
+            draw_text(self.screen, self.fonts["small"], "No signal",
+                      (rect.left + 12, rect.top + 10), COLORS["muted"])
+            return
+
+        db_max = max(float(np.max(mags)), 1.0)
+        bar_w  = max(1, width // len(mags))
+        n_bars = width // bar_w
+
+        indices = np.linspace(0, len(mags) - 1, n_bars, dtype=int)
+        for i, idx in enumerate(indices):
+            val   = float(mags[idx])
+            bar_h = max(1, int((val / db_max) * height))
+            x     = left + i * bar_w
+
+            # Farbe: grün → gelb → rot je nach Amplitude
+            t = val / db_max
+            if t < 0.5:
+                color = (int(t * 2 * 200), 200, 80)
+            else:
+                color = (200, int((1.0 - t) * 2 * 200), 40)
+
+            pygame.draw.rect(self.screen, color,
+                             pygame.Rect(x, bottom - bar_h, bar_w - 1, bar_h))
+
+        # Dominante Frequenz anzeigen
+        dom = dominant_frequency(signal)
+        draw_text(self.screen, self.fonts["small"], f"0 Hz",
+                  (left, bottom + 2), COLORS["muted"])
+        draw_text(self.screen, self.fonts["small"], f"8k Hz",
+                  (right, bottom + 2), COLORS["muted"], right=True)
+        draw_text(self.screen, self.fonts["small"], f"↑ {dom:.0f} Hz",
+                  (rect.left + 12, rect.top + 10), COLORS["green"])
+
+    def _toggle_viz_mode(self):
+        reset_spectrum()   # ← Smoothing-Buffer aus spectrum.py leeren
+        if self.viz_mode == "waveform":
+            self.viz_mode = "spectrum"
+            self.status   = "Visualizer: Spectrum (FFT)"
+        else:
+            self.viz_mode = "waveform"
+            self.status   = "Visualizer: Waveform"
 
     def _signal_points(self, signal, rect):
         if signal.size < 2:
@@ -390,8 +494,9 @@ class AudioWowPygame:
 
     def _draw_footer(self):
         mic_label = self._current_mic_label()
-        draw_text(self.screen, self.fonts["small"], f"Mic: {mic_label}", (760, 988), COLORS["muted"])
-        draw_text(self.screen, self.fonts["small"], "Keys: W add WAV, S add sine, M mic, Space stop/resume, Esc quit", (760, 1010), COLORS["muted"])
+        draw_text(self.screen, self.fonts["small"], f"Mic: {mic_label}", (760, 1068), COLORS["muted"])
+        draw_text(self.screen, self.fonts["small"], "Keys: W add WAV, S add sine, M mic, Space stop/resume, Esc quit",
+                  (760, 1090), COLORS["muted"])
 
     def _draw_tracks(self, mouse_pos):
         if not any(getattr(control, "dragging", False) for control in self.track_controls):
@@ -402,7 +507,7 @@ class AudioWowPygame:
             return
 
         for track in tracks[:4]:
-            y = 668 + track["index"] * 24
+            y = 748 + track["index"] * 24   # y: 668 → 748 (panel y=700 + header ~48)
             name = track["name"]
             if len(name) > 36:
                 name = name[:33] + "..."
@@ -417,27 +522,33 @@ class AudioWowPygame:
             draw_text(self.screen, self.fonts["small"], f"{track['index'] + 1}. {name}{flag_text}", (48, y - 13), COLORS["text"])
 
         if len(tracks) > 4:
-            draw_text(self.screen, self.fonts["small"], f"+ {len(tracks) - 4} more track(s)", (984, 734), COLORS["muted"])
+            draw_text(self.screen, self.fonts["small"], f"+ {len(tracks) - 4} more track(s)", (984, 814), COLORS["muted"])
 
         for control in self.track_controls:
             control.draw(self.screen, self.fonts, mouse_pos)
 
     def _draw_track_fx(self, mouse_pos):
-        if not any(getattr(control, "dragging", False) for control in self.track_fx_controls):
+        # Ghost-Fix: nur synchen wenn KEIN Slider gezogen wird UND kein Dragging aktiv
+        any_dragging = any(getattr(c, "dragging", False) for c in self.track_fx_controls)
+        if not any_dragging:
             self._sync_track_fx_controls()
-        if self.selected_track_index is None or (self.selected_track_index != -1 and self.selected_track_index >= mixer.track_count()):
-            draw_text(self.screen, self.fonts["body"], "Select a track to edit its own effects", (48, 842), COLORS["muted"])
+
+        if self.selected_track_index is None or (
+            self.selected_track_index != -1 and self.selected_track_index >= mixer.track_count()
+        ):
+            draw_text(self.screen, self.fonts["body"],
+                      "Select a track to edit its own effects", (48, 900), COLORS["muted"])
             return
 
         tracks = mixer.get_tracks()
         if self.selected_track_index == -1:
-            draw_text(self.screen, self.fonts["small"], "Editing: all loaded tracks", (48, 822), COLORS["muted"])
+            draw_text(self.screen, self.fonts["small"], "Editing: all loaded tracks", (48, 878), COLORS["muted"])
         else:
             track = tracks[self.selected_track_index]
-            name = track["name"]
+            name  = track["name"]
             if len(name) > 44:
                 name = name[:41] + "..."
-            draw_text(self.screen, self.fonts["small"], f"Editing: {name}", (48, 822), COLORS["muted"])
+            draw_text(self.screen, self.fonts["small"], f"Editing: {name}", (48, 878), COLORS["muted"])
 
         for pad in self.track_effect_pads:
             pad.draw(self.screen, self.fonts, mouse_pos)
@@ -620,6 +731,7 @@ class AudioWowPygame:
         self._sync_track_controls(force=True)
         self._sync_track_fx_controls(force=True)
 
+    # y: 680 → 760
     def _sync_track_controls(self, force=False):
         tracks = mixer.get_tracks()[:4]
         snapshot = [(track["index"], track["muted"], track["solo"], track["name"]) for track in tracks]
@@ -630,24 +742,29 @@ class AudioWowPygame:
         self.track_controls = []
         for row, track in enumerate(tracks):
             index = track["index"]
-            y = 680 + row * 24
+            y = 760 + row * 24  # ← 680 → 760
             self.track_controls.append(
                 Slider(
-                    (370, y - 2, 300, 20),
-                    "",
-                    0.0,
-                    2.0,
-                    track["volume"],
+                    (370, y - 2, 300, 20), "",
+                    0.0, 2.0, track["volume"],
                     lambda value, track_index=index: self._set_track_volume(track_index, value),
                     lambda value: f"{int(value * 100)}%",
                 )
             )
             mute_label = "Unmute" if track["muted"] else "Mute"
             solo_label = "Solo*" if track["solo"] else "Solo"
-            self.track_controls.append(Button((702, y - 12, 74, 28), mute_label, lambda track_index=index: self._toggle_track_mute(track_index), COLORS["panel_2"]))
-            self.track_controls.append(Button((790, y - 12, 68, 28), solo_label, lambda track_index=index: self._toggle_track_solo(track_index), COLORS["panel_2"]))
-            self.track_controls.append(Button((872, y - 12, 82, 28), "Select", lambda track_index=index: self._select_track(track_index), COLORS["cyan"]))
-            self.track_controls.append(Button((968, y - 12, 82, 28), "Remove", lambda track_index=index: self._remove_track(track_index), COLORS["red"]))
+            self.track_controls.append(Button((702, y - 12, 74, 28), mute_label,
+                                              lambda track_index=index: self._toggle_track_mute(track_index),
+                                              COLORS["panel_2"]))
+            self.track_controls.append(Button((790, y - 12, 68, 28), solo_label,
+                                              lambda track_index=index: self._toggle_track_solo(track_index),
+                                              COLORS["panel_2"]))
+            self.track_controls.append(
+                Button((872, y - 12, 82, 28), "Select", lambda track_index=index: self._select_track(track_index),
+                       COLORS["cyan"]))
+            self.track_controls.append(
+                Button((968, y - 12, 82, 28), "Remove", lambda track_index=index: self._remove_track(track_index),
+                       COLORS["red"]))
 
     def _toggle_track_effect(self, key, enabled):
         if self.selected_track_index is None:
@@ -672,54 +789,78 @@ class AudioWowPygame:
         return []
 
     def _sync_track_fx_controls(self, force=False):
-        if self.selected_track_index is None or (self.selected_track_index != -1 and self.selected_track_index >= mixer.track_count()):
-            snapshot = None
-            if not force and snapshot == self.track_fx_snapshot:
+        if self.selected_track_index is None or (
+            self.selected_track_index != -1 and self.selected_track_index >= mixer.track_count()
+        ):
+            if not force and self.track_fx_snapshot is None:
                 return
-            self.track_fx_snapshot = snapshot
+            self.track_fx_snapshot = None
             self.track_effect_pads = []
             self.track_fx_controls = []
             return
 
         if self.selected_track_index == -1:
-            all_effects = [mixer.get_track_effects(index) for index in range(mixer.track_count())]
+            all_effects = [mixer.get_track_effects(i) for i in range(mixer.track_count())]
             enabled = set.intersection(*all_effects) if all_effects else set()
-            params = mixer.get_track_effect_params(0) if mixer.track_count() else mixer.get_track_effect_params(-1)
+            params  = mixer.get_track_effect_params(0) if mixer.track_count() else mixer.get_track_effect_params(-1)
         else:
             enabled = mixer.get_track_effects(self.selected_track_index)
-            params = mixer.get_track_effect_params(self.selected_track_index)
-        snapshot = (
-            self.selected_track_index,
-            tuple(sorted(enabled)),
-            tuple((effect, param, params[effect][param]) for effect, param, _label, _min, _max in TRACK_FX_SLIDERS),
-        )
+            params  = mixer.get_track_effect_params(self.selected_track_index)
+
+        # Snapshot: detect changes
+        try:
+            snapshot = (
+                self.selected_track_index,
+                tuple(sorted(enabled)),
+                tuple(
+                    (effect, param, params[effect][param])
+                    for effect, param, _label, _min, _max in TRACK_FX_SLIDERS
+                    if effect in params and param in params[effect]
+                ),
+            )
+        except Exception:
+            snapshot = None
+
         if not force and snapshot == self.track_fx_snapshot:
             return
 
         self.track_fx_snapshot = snapshot
+
+        # ── Effect Pads (toggle buttons) ──────────────────────────────────
         self.track_effect_pads = []
-        x = 226
-        for key, (label, _effect_fn, _reset_fn, color) in EFFECTS.items():
-            pad = TogglePad((x, 820, 104, 34), key, label, color, self._toggle_track_effect)
+        x = 42
+        for key, (label, _fn, _reset, color) in EFFECTS.items():
+            pad = TogglePad((x, 902, 104, 34), key, label, color, self._toggle_track_effect)
             pad.enabled = key in enabled
             self.track_effect_pads.append(pad)
-            x += 112
+            x += 116
 
+        # ── FX Sliders — 2 rows of 5 ──────────────────────────────────────
+        # Row 1: y=952, Row 2: y=1012 — 5 sliders per row, width=194 each
         self.track_fx_controls = []
-        slider_positions = [
-            (42, 882, 124), (206, 882, 124), (370, 882, 124), (534, 882, 124),
-            (698, 882, 124), (862, 882, 124), (42, 942, 124), (206, 942, 124),
-        ]
-        for (effect_name, param_name, label, minimum, maximum), (x, y, width) in zip(TRACK_FX_SLIDERS, slider_positions):
-            value = params[effect_name][param_name]
+        col_w = 210
+        row_y = [952, 1012]
+
+        for i, (effect_name, param_name, label, minimum, maximum) in enumerate(TRACK_FX_SLIDERS):
+            row = i // 5
+            col = i % 5
+            x   = 42 + col * col_w
+            y   = row_y[row]
+            w   = col_w - 16
+
+            # Wert aus params holen, Fallback auf minimum
+            value = minimum
+            if effect_name in params and param_name in params[effect_name]:
+                value = params[effect_name][param_name]
+
             self.track_fx_controls.append(
                 Slider(
-                    (x, y, width, 20),
+                    (x, y, w, 20),
                     label,
                     minimum,
                     maximum,
                     value,
-                    lambda slider_value, effect=effect_name, param=param_name: self._set_track_effect_param(effect, param, slider_value),
+                    lambda v, e=effect_name, p=param_name: self._set_track_effect_param(e, p, v),
                 )
             )
 
