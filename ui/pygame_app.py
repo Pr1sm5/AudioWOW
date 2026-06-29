@@ -442,12 +442,11 @@ class AudioWowPygame:
                   (rect.right - 12, rect.bottom - 20), COLORS["muted"], right=True)
 
     def _draw_spectrum(self, signal, rect):
-        """Spektrum-Darstellung via spectrum.compute_spectrum()"""
-        left   = rect.left + 10
-        right  = rect.right - 10
-        top    = rect.top + 24
+        left = rect.left + 10
+        right = rect.right - 10
+        top = rect.top + 24
         bottom = rect.bottom - 8
-        width  = right - left
+        width = right - left
         height = bottom - top
 
         freqs, mags = compute_spectrum(signal, smooth=True)
@@ -457,17 +456,23 @@ class AudioWowPygame:
                       (rect.left + 12, rect.top + 10), COLORS["muted"])
             return
 
-        db_max = max(float(np.max(mags)), 1.0)
-        bar_w  = max(1, width // len(mags))
-        n_bars = width // bar_w
+        db_max = float(np.max(mags))
+        # Kein Signal → nichts zeichnen statt durch 1.0 zu dividieren
+        if db_max < 0.5:
+            draw_text(self.screen, self.fonts["small"], "No signal",
+                      (rect.left + 12, rect.top + 10), COLORS["muted"])
+            return
+
+        n_bars = min(width, 200)  # Feste Anzahl Balken, unabhängig von len(mags)
+        bar_w = max(1, width // n_bars)
+        n_bars = width // bar_w  # Anpassen an tatsächliche Breite
 
         indices = np.linspace(0, len(mags) - 1, n_bars, dtype=int)
         for i, idx in enumerate(indices):
-            val   = float(mags[idx])
+            val = float(mags[idx])
             bar_h = max(1, int((val / db_max) * height))
-            x     = left + i * bar_w
+            x = left + i * bar_w
 
-            # Farbe: grün → gelb → rot je nach Amplitude
             t = val / db_max
             if t < 0.5:
                 color = (int(t * 2 * 200), 200, 80)
@@ -477,7 +482,6 @@ class AudioWowPygame:
             pygame.draw.rect(self.screen, color,
                              pygame.Rect(x, bottom - bar_h, bar_w - 1, bar_h))
 
-        # Dominante Frequenz anzeigen
         dom = dominant_frequency(signal)
         draw_text(self.screen, self.fonts["small"], f"0 Hz",
                   (left, bottom + 2), COLORS["muted"])

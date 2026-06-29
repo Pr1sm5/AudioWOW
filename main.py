@@ -7,10 +7,6 @@ if __name__ == "__main__":
         from cli.cli import run
 
         run()
-    elif "--tk" in sys.argv:
-        from ui.app import run_ui
-
-        run_ui()
     else:
         try:
             from ui.pygame_app import run_ui
