@@ -15,6 +15,7 @@ DEFAULT_FX_PARAMS = {
 
 
 def add_track(data: np.ndarray, name: str = "Track", volume: float = 1.0):
+    """Add a mono float32 buffer as a looping mixer track."""
     _tracks.append({
         'data': data.astype('float32'),
         'position': 0,
@@ -29,6 +30,7 @@ def add_track(data: np.ndarray, name: str = "Track", volume: float = 1.0):
 
 
 def remove_track(index: int):
+    """Remove a track and keep the solo selection consistent."""
     global _solo_index
     if 0 <= index < len(_tracks):
         name = _tracks[index]['name']
@@ -41,16 +43,19 @@ def remove_track(index: int):
 
 
 def clear_tracks():
+    """Remove every loaded track and clear solo mode."""
     global _solo_index
     _tracks.clear()
     _solo_index = None
 
 
 def has_sources() -> bool:
+    """Return whether the mixer has at least one file/sine track or microphone input."""
     return bool(_tracks) or _mic_enabled
 
 
 def get_tracks():
+    """Return UI-friendly metadata for all loaded tracks."""
     return [
         {
             'index': index,
@@ -65,26 +70,31 @@ def get_tracks():
 
 
 def track_count() -> int:
+    """Return the number of loaded non-microphone tracks."""
     return len(_tracks)
 
 
 def track_has_effect(index: int, effect_fn) -> bool:
+    """Check whether a track has a named effect enabled."""
     return 0 <= index < len(_tracks) and _effect_name(effect_fn) in _tracks[index]['fx_enabled']
 
 
 def get_track_effects(index: int):
+    """Return a copy of the enabled effect names for one track."""
     if not 0 <= index < len(_tracks):
         return set()
     return set(_tracks[index]['fx_enabled'])
 
 
 def get_track_effect_params(index: int):
+    """Return copied per-effect parameters for one track."""
     if not 0 <= index < len(_tracks):
         return {name: params.copy() for name, params in DEFAULT_FX_PARAMS.items()}
     return {name: params.copy() for name, params in _tracks[index]['fx_params'].items()}
 
 
 def set_track_effect_enabled(index: int, effect_name: str, enabled: bool):
+    """Turn a per-track effect on or off and clear stale state when disabled."""
     if not 0 <= index < len(_tracks) or effect_name not in DEFAULT_FX_PARAMS:
         return
 
@@ -97,6 +107,7 @@ def set_track_effect_enabled(index: int, effect_name: str, enabled: bool):
 
 
 def set_track_effect_param(index: int, effect_name: str, param_name: str, value: float):
+    """Update one per-track effect parameter after clamping it to a safe range."""
     if not 0 <= index < len(_tracks):
         return
     if effect_name not in _tracks[index]['fx_params']:
@@ -111,11 +122,13 @@ def set_track_effect_param(index: int, effect_name: str, param_name: str, value:
 
 
 def clear_solo():
+    """Disable solo mode so all unmuted tracks can be heard."""
     global _solo_index
     _solo_index = None
 
 
 def list_tracks():
+    """Print a CLI-friendly overview of tracks, volume, mute, solo, and effects."""
     if not _tracks and not _mic_enabled:
         print("Keine Tracks geladen.")
         return
@@ -130,6 +143,7 @@ def list_tracks():
 
 
 def solo_track(index: int):
+    """Toggle solo mode for a single track."""
     global _solo_index
     if not 0 <= index < len(_tracks):
         return
@@ -142,6 +156,7 @@ def solo_track(index: int):
 
 
 def mute_track(index: int):
+    """Toggle mute for a single track and print the new state."""
     if 0 <= index < len(_tracks):
         set_track_muted(index, not _tracks[index]['muted'])
         state = "MUTE" if _tracks[index]['muted'] else "UNMUTE"
@@ -149,16 +164,19 @@ def mute_track(index: int):
 
 
 def set_track_muted(index: int, muted: bool):
+    """Set a track's mute state directly."""
     if 0 <= index < len(_tracks):
         _tracks[index]['muted'] = muted
 
 
 def set_track_volume(index: int, volume: float):
+    """Set one track's volume, clamped between silence and 200%."""
     if 0 <= index < len(_tracks):
         _tracks[index]['volume'] = max(0.0, min(2.0, volume))
 
 
 def add_track_effect(track_index: int, effect_fn):
+    """Enable an effect on one track using the function name as the effect key."""
     effect_name = _effect_name(effect_fn)
     set_track_effect_enabled(track_index, effect_name, True)
     if 0 <= track_index < len(_tracks):
@@ -166,6 +184,7 @@ def add_track_effect(track_index: int, effect_fn):
 
 
 def remove_track_effect(track_index: int, effect_fn):
+    """Disable an effect on one track using the function name as the effect key."""
     effect_name = _effect_name(effect_fn)
     set_track_effect_enabled(track_index, effect_name, False)
     if 0 <= track_index < len(_tracks):
@@ -173,6 +192,7 @@ def remove_track_effect(track_index: int, effect_fn):
 
 
 def enable_mic(volume: float = 1.0):
+    """Include microphone chunks in the mixed output."""
     global _mic_enabled, _mic_volume
     _mic_enabled = True
     _mic_volume = volume
@@ -180,11 +200,13 @@ def enable_mic(volume: float = 1.0):
 
 
 def disable_mic():
+    """Stop including microphone chunks in the mixed output."""
     global _mic_enabled
     _mic_enabled = False
 
 
 def get_mix_chunk(frames: int, samplerate: int = 44100, mic_chunk: np.ndarray = None) -> np.ndarray:
+    """Build the next mixed audio block from tracks, mic input, and per-track effects."""
     mixed = np.zeros(frames, dtype='float32')
 
     for i, track in enumerate(_tracks):
@@ -218,14 +240,17 @@ def get_mix_chunk(frames: int, samplerate: int = 44100, mic_chunk: np.ndarray = 
 
 
 def _advance_position(track: dict, frames: int):
+    """Move a skipped track forward so mute/solo does not pause its timeline."""
     track['position'] = (track['position'] + frames) % len(track['data'])
 
 
 def _effect_name(effect_fn) -> str:
+    """Convert apply_reverb-style function names into mixer effect keys."""
     return getattr(effect_fn, '__name__', str(effect_fn)).replace('apply_', '')
 
 
 def _clamp_effect_param(effect_name: str, param_name: str, value: float) -> float:
+    """Keep effect parameters inside ranges that avoid silence, runaway feedback, or clipping."""
     if param_name in ('wet', 'level'):
         return max(0.0, min(1.0, value))
     if param_name == 'dry':
@@ -242,6 +267,7 @@ def _clamp_effect_param(effect_name: str, param_name: str, value: float) -> floa
 
 
 def _apply_track_effects(track: dict, chunk: np.ndarray, samplerate: int) -> np.ndarray:
+    """Apply enabled effects in a stable order while preserving stateful buffers."""
     for effect_name in ('reverb', 'delay', 'lowpass', 'highpass', 'distortion'):
         if effect_name not in track['fx_enabled']:
             continue
@@ -261,6 +287,7 @@ def _apply_track_effects(track: dict, chunk: np.ndarray, samplerate: int) -> np.
 
 
 def _apply_track_reverb(chunk: np.ndarray, samplerate: int, params: dict, state: dict) -> np.ndarray:
+    """Add several short echoes to simulate room reverb for a single track."""
     delays = ((0.030, 0.6), (0.045, 0.4), (0.070, 0.25), (0.100, 0.15))
     max_delay_samples = int(max(delay for delay, _decay in delays) * samplerate)
     buffer = state.get('buffer')
@@ -288,6 +315,7 @@ def _apply_track_reverb(chunk: np.ndarray, samplerate: int, params: dict, state:
 
 
 def _apply_track_delay(chunk: np.ndarray, samplerate: int, params: dict, state: dict) -> np.ndarray:
+    """Apply a feedback delay line using per-track state."""
     delay_samples = int(params['seconds'] * samplerate)
     if delay_samples <= 0:
         return chunk
@@ -314,6 +342,7 @@ def _apply_track_delay(chunk: np.ndarray, samplerate: int, params: dict, state: 
 
 
 def _apply_track_lowpass(chunk: np.ndarray, samplerate: int, params: dict, state: dict) -> np.ndarray:
+    """Apply a one-pole lowpass filter that smooths away high frequencies."""
     cutoff = params['cutoff']
     dt = 1.0 / samplerate
     rc = 1.0 / (2.0 * np.pi * cutoff)
@@ -328,6 +357,7 @@ def _apply_track_lowpass(chunk: np.ndarray, samplerate: int, params: dict, state
 
 
 def _apply_track_highpass(chunk: np.ndarray, samplerate: int, params: dict, state: dict) -> np.ndarray:
+    """Apply a one-pole highpass filter that reduces low frequencies."""
     cutoff = params['cutoff']
     dt = 1.0 / samplerate
     rc = 1.0 / (2.0 * np.pi * cutoff)
@@ -346,6 +376,7 @@ def _apply_track_highpass(chunk: np.ndarray, samplerate: int, params: dict, stat
 
 
 def _apply_track_distortion(chunk: np.ndarray, params: dict) -> np.ndarray:
+    """Apply tanh soft clipping and blend it with the dry signal."""
     distorted = np.tanh(chunk * params['drive'])
     output = chunk * (1.0 - params['level']) + distorted * params['level']
     return np.clip(output, -1.0, 1.0).astype('float32')

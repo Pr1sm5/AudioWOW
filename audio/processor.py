@@ -16,23 +16,27 @@ _latest_signal = np.zeros(BLOCKSIZE, dtype="float32")
 
 
 def set_volume(value: float):
+    """Set the master output volume, clamped between silence and 200%."""
     global _volume
     _volume = max(0.0, min(2.0, value))
     print(f"Volume: {int(_volume * 100)}%")
 
 
 def get_latest_signal() -> np.ndarray:
+    """Return a thread-safe copy of the most recent output chunk for visualizers."""
     with _signal_lock:
         return _latest_signal.copy()
 
 
 def _publish_signal(chunk: np.ndarray):
+    """Store the latest processed chunk so the UI can draw it outside the audio thread."""
     global _latest_signal
     with _signal_lock:
         _latest_signal = chunk.astype("float32", copy=True)
 
 
 def _resample_audio(data: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
+    """Convert loaded audio to the app sample rate using simple linear interpolation."""
     if source_rate == target_rate or len(data) == 0:
         return data.astype("float32")
 
@@ -44,6 +48,7 @@ def _resample_audio(data: np.ndarray, source_rate: int, target_rate: int) -> np.
 
 
 def load_file(filepath: str, name: str = None, volume: float = 1.0):
+    """Load a WAV file, normalize its sample rate, and register it with the mixer."""
     from audio.input_handler import load_wav
     data, sr = load_wav(filepath)
     data = _resample_audio(data, sr, SAMPLERATE)
@@ -52,6 +57,7 @@ def load_file(filepath: str, name: str = None, volume: float = 1.0):
 
 
 def enable_mic(device_index: int = None, volume: float = 1.0):
+    """Switch the processor into microphone mode and tell the mixer to include mic audio."""
     global _mic_mode, _mic_device_index
     _mic_mode = True
     _mic_device_index = device_index
@@ -59,6 +65,7 @@ def enable_mic(device_index: int = None, volume: float = 1.0):
 
 
 def _callback_file(outdata, frames, time, status):
+    """Audio callback for playback without microphone input."""
     chunk = mixer.get_mix_chunk(frames, samplerate=SAMPLERATE)  # ← samplerate ergänzt
 
     for effect_fn in active_effects:
@@ -70,6 +77,7 @@ def _callback_file(outdata, frames, time, status):
 
 
 def _callback_mic(indata, outdata, frames, time, status):
+    """Audio callback that mixes live microphone input with any loaded tracks."""
     mic_chunk = indata[:, 0].copy()
     chunk = mixer.get_mix_chunk(frames, samplerate=SAMPLERATE, mic_chunk=mic_chunk)  # ← samplerate ergänzt
 
@@ -91,6 +99,7 @@ def load_audio_data(data: np.ndarray, samplerate: int = 44100):
 
 
 def clear_sources():
+    """Remove all audio sources and reset the published visualizer signal."""
     global _mic_mode, _mic_device_index
     _mic_mode = False
     _mic_device_index = None
@@ -100,6 +109,7 @@ def clear_sources():
 
 
 def start_stream():
+    """Create, but do not start, the correct stream for the current input mode."""
     if _mic_mode:
         return sd.Stream(
             device=(_mic_device_index, sd.default.device[1]),

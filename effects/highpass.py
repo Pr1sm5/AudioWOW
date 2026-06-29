@@ -6,6 +6,7 @@ _cutoff_hz = 500.0
 
 
 def set_cutoff(cutoff_hz: float):
+    """Set the highpass cutoff frequency in Hz."""
     global _cutoff_hz
     _cutoff_hz = max(20.0, min(20000.0, cutoff_hz))
 
@@ -48,6 +49,7 @@ def apply_highpass(
 
 
 def reset_highpass():
+    """Clear filter history so the next block starts fresh."""
     global _highpass_last_input, _highpass_last_output
     _highpass_last_input = None
     _highpass_last_output = None

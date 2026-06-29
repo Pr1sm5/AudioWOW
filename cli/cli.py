@@ -22,6 +22,7 @@ EFFECTS = {
 # ─── Input Quellen ────────────────────────────────────────────────────────────
 
 def _generate_sine(frequency: float, duration: float, samplerate: int = 44100) -> np.ndarray:
+    """Generate a mono sine wave for quick testing without a WAV file."""
     t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
     return np.sin(2 * np.pi * frequency * t).astype('float32')
 
@@ -110,6 +111,7 @@ def prompt_input_source() -> None:
 # ─── Effekt Parameter ─────────────────────────────────────────────────────────
 
 def _adjust_params(key: str) -> None:
+    """Prompt for parameters for one global effect and apply them."""
     try:
         if key == 'r':
             from effects.reverb import set_preset, set_mix
@@ -173,6 +175,7 @@ def _adjust_params(key: str) -> None:
 # ─── Toggle & Volume ──────────────────────────────────────────────────────────
 
 def _toggle(key: str) -> None:
+    """Turn one global effect on or off in the active effects chain."""
     name, effect_fn, reset_fn = EFFECTS[key]
     if effect_fn in active_effects:
         active_effects.remove(effect_fn)
@@ -186,6 +189,7 @@ def _toggle(key: str) -> None:
 
 
 def _change_volume(delta: float) -> None:
+    """Adjust master volume by a relative amount."""
     global _current_volume
     _current_volume = max(0.0, min(2.0, _current_volume + delta))
     set_volume(_current_volume)
@@ -243,6 +247,7 @@ def _track_volume_menu() -> None:
 # ─── Anzeige ──────────────────────────────────────────────────────────────────
 
 def _print_help() -> None:
+    """Print the available CLI commands."""
     print("""
 ╔══════════════════════════════════╗
 ║       DASP Live Audio FX         ║
@@ -266,6 +271,7 @@ def _print_help() -> None:
 
 
 def _print_status() -> None:
+    """Print current volume, global effects, and track list."""
     active_names = [EFFECTS[k][0] for k in EFFECTS if EFFECTS[k][1] in active_effects]
     status = ', '.join(active_names) if active_names else 'keine'
     print(f"Volume: {int(_current_volume * 100)}% | Effekte: {status}")

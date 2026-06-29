@@ -1,8 +1,8 @@
 import sys
 
 
-# Hello
 if __name__ == "__main__":
+    # Pick the interface from command-line flags; pygame is the default UI.
     if "--cli" in sys.argv:
         from cli.cli import run
 

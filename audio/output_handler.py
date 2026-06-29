@@ -9,6 +9,7 @@ def play_audio(audio: np.ndarray, samplerate: int) -> None:
 
 
 def get_output_stream(callback, samplerate: int = 44100, blocksize: int = 1024):
+    """Create the mono output stream used by the processor callbacks."""
     return sd.OutputStream(       # ← nicht Stream
         samplerate=samplerate,
         blocksize=blocksize,

@@ -5,6 +5,7 @@ _cutoff_hz = 1000.0
 
 
 def set_cutoff(cutoff_hz: float):
+    """Set the lowpass cutoff frequency in Hz."""
     global _cutoff_hz
     _cutoff_hz = max(20.0, min(20000.0, cutoff_hz))
 
@@ -14,6 +15,7 @@ def apply_lowpass(
     samplerate: int,
     cutoff_hz: float = None,
 ) -> np.ndarray:
+    """Apply a one-pole lowpass filter to one audio block."""
     global _lowpass_last
 
     cutoff_hz = _cutoff_hz if cutoff_hz is None else cutoff_hz
@@ -33,5 +35,6 @@ def apply_lowpass(
 
 
 def reset_lowpass():
+    """Clear filter history so the next block starts fresh."""
     global _lowpass_last
     _lowpass_last = None

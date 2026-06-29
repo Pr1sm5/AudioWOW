@@ -70,13 +70,17 @@ TRACK_FX_SLIDERS = [
 
 
 class Button:
+    """Clickable rectangular button with a pygame callback."""
+
     def __init__(self, rect, label, action, color=None):
+        """Store button geometry, label, action callback, and color."""
         self.rect = pygame.Rect(rect)
         self.label = label
         self.action = action
         self.color = color or COLORS["panel_2"]
 
     def draw(self, screen, fonts, mouse_pos):
+        """Draw the button and its hover state."""
         hovered = self.rect.collidepoint(mouse_pos)
         color = tuple(min(255, channel + 16) for channel in self.color) if hovered else self.color
         pygame.draw.rect(screen, color, self.rect, border_radius=8)
@@ -84,6 +88,7 @@ class Button:
         draw_text(screen, fonts["button"], self.label, self.rect.center, COLORS["text"], center=True)
 
     def handle_event(self, event):
+        """Run the button action when a left click lands inside the rectangle."""
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.rect.collidepoint(event.pos):
             self.action()
             return True
@@ -91,7 +96,10 @@ class Button:
 
 
 class TogglePad:
+    """Effect toggle button that keeps an on/off state."""
+
     def __init__(self, rect, key, label, color, action):
+        """Store the effect identity and action callback for this pad."""
         self.rect = pygame.Rect(rect)
         self.key = key
         self.label = label
@@ -100,6 +108,7 @@ class TogglePad:
         self.enabled = False
 
     def draw(self, screen, fonts, mouse_pos):
+        """Draw the pad with a lit style when enabled."""
         hovered = self.rect.collidepoint(mouse_pos)
         bg = self.color if self.enabled else COLORS["panel_2"]
         if hovered and not self.enabled:
@@ -112,6 +121,7 @@ class TogglePad:
         pygame.draw.circle(screen, COLORS["bg"] if self.enabled else self.color, led_rect.center, 4)
 
     def handle_event(self, event):
+        """Toggle enabled state and notify the parent UI on click."""
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.rect.collidepoint(event.pos):
             self.enabled = not self.enabled
             self.action(self.key, self.enabled)
@@ -120,7 +130,10 @@ class TogglePad:
 
 
 class Slider:
+    """Horizontal value control used for volume and effect parameters."""
+
     def __init__(self, rect, label, minimum, maximum, value, setter, value_format=None):
+        """Store the slider range, current value, and setter callback."""
         self.rect = pygame.Rect(rect)
         self.label = label
         self.minimum = minimum
@@ -131,6 +144,7 @@ class Slider:
         self.dragging = False
 
     def draw(self, screen, fonts, mouse_pos):
+        """Draw the slider track, filled range, knob, label, and value text."""
         if self.label:
             draw_text(screen, fonts["small"], self.label, (self.rect.left, self.rect.top - 18), COLORS["muted"])
         track = pygame.Rect(self.rect.left, self.rect.centery - 3, self.rect.width, 6)
@@ -146,6 +160,7 @@ class Slider:
             draw_text(screen, fonts["small"], value_text, (self.rect.right + 52, self.rect.centery - 8), COLORS["text"], right=True)
 
     def handle_event(self, event):
+        """Start, update, or stop dragging based on mouse events."""
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self._hit_area().collidepoint(event.pos):
             self.dragging = True
             self._set_from_x(event.pos[0])
@@ -158,19 +173,23 @@ class Slider:
         return False
 
     def _hit_area(self):
+        """Return a slightly larger rectangle so the knob is easier to grab."""
         return self.rect.inflate(8, 20)
 
     def _knob_x(self):
+        """Convert the current numeric value into a knob x-coordinate."""
         progress = (self.value - self.minimum) / (self.maximum - self.minimum)
         return int(self.rect.left + progress * self.rect.width)
 
     def _set_from_x(self, x_pos):
+        """Convert mouse x-position into a clamped slider value."""
         progress = max(0.0, min(1.0, (x_pos - self.rect.left) / self.rect.width))
         self.value = self.minimum + progress * (self.maximum - self.minimum)
         self.setter(self.value)
 
 
 def draw_text(screen, font, text, pos, color, center=False, right=False):
+    """Render text at a top-left, centered, or top-right position."""
     surface = font.render(str(text), True, color)
     rect = surface.get_rect()
     if center:
@@ -183,6 +202,7 @@ def draw_text(screen, font, text, pos, color, center=False, right=False):
 
 
 def format_slider_value(value):
+    """Format slider values with fewer decimals for larger numbers."""
     if value >= 100:
         return f"{value:.0f}"
     if value >= 10:
@@ -191,7 +211,10 @@ def format_slider_value(value):
 
 
 class AudioWowPygame:
+    """Main pygame application that wires controls, streams, tracks, and visualization."""
+
     def __init__(self):
+        """Initialize pygame, UI state, audio state, and all controls."""
         pygame.init()
         pygame.display.set_caption("AudioWOW")
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -227,6 +250,7 @@ class AudioWowPygame:
         self._build_controls()
 
     def _build_controls(self):
+        """Create static buttons, global effect pads, and global sliders."""
         self.controls = [
             Button((42, 162, 136, 44), "Add WAV", self._choose_wav, COLORS["cyan"]),
             Button((194, 162, 136, 44), "Add Sine", self._use_sine, COLORS["green"]),
@@ -274,6 +298,7 @@ class AudioWowPygame:
         self._sync_track_fx_controls(force=True)
 
     def run(self):
+        """Run the pygame event loop until the window is closed."""
         while self.running:
             mouse_pos = pygame.mouse.get_pos()
             for event in pygame.event.get():
@@ -292,6 +317,7 @@ class AudioWowPygame:
         pygame.quit()
 
     def _handle_key(self, key):
+        """Map keyboard shortcuts to source and playback actions."""
         if key == pygame.K_ESCAPE:
             self.running = False
         elif key == pygame.K_SPACE:
@@ -307,6 +333,7 @@ class AudioWowPygame:
             self._use_microphone()
 
     def _handle_control_event(self, event):
+        """Offer one pygame event to controls in priority order."""
         for control in self.controls:
             if control.handle_event(event):
                 return
@@ -327,6 +354,7 @@ class AudioWowPygame:
                 return
 
     def _draw(self, mouse_pos):
+        """Draw the full application frame."""
         self.screen.fill(COLORS["bg"])
         self._draw_header()
         self._draw_panel((28, 118, 1108, 164), "Sources")
@@ -347,6 +375,7 @@ class AudioWowPygame:
         self._draw_track_fx(mouse_pos)
 
     def _draw_header(self):
+        """Draw title, status, current source, and error text."""
         draw_text(self.screen, self.fonts["title"], "AudioWOW", (34, 26), COLORS["text"])
         draw_text(self.screen, self.fonts["body"], self.status, (36, 68), COLORS["green"])
         source = self.source
@@ -357,12 +386,14 @@ class AudioWowPygame:
             draw_text(self.screen, self.fonts["small"], self.error, (1136, 92), COLORS["red"], right=True)
 
     def _draw_panel(self, rect, title):
+        """Draw one labelled background panel."""
         panel = pygame.Rect(rect)
         pygame.draw.rect(self.screen, COLORS["panel"], panel, border_radius=12)
         pygame.draw.rect(self.screen, COLORS["line"], panel, width=1, border_radius=12)
         draw_text(self.screen, self.fonts["section"], title, (panel.left + 14, panel.top + 12), COLORS["text"])
 
     def _draw_visualizer(self):
+        """Draw the live waveform or FFT spectrum panel."""
         rect = pygame.Rect(660, 162, 446, 96)
         pygame.draw.rect(self.screen, (10, 12, 16), rect, border_radius=8)
         pygame.draw.rect(self.screen, COLORS["line"], rect, width=1, border_radius=8)
@@ -456,6 +487,7 @@ class AudioWowPygame:
                   (rect.left + 12, rect.top + 10), COLORS["green"])
 
     def _toggle_viz_mode(self):
+        """Switch between waveform and spectrum visualization modes."""
         reset_spectrum()   # ← Smoothing-Buffer aus spectrum.py leeren
         if self.viz_mode == "waveform":
             self.viz_mode = "spectrum"
@@ -465,6 +497,7 @@ class AudioWowPygame:
             self.status   = "Visualizer: Waveform"
 
     def _signal_points(self, signal, rect):
+        """Convert an audio signal into drawable waveform points."""
         if signal.size < 2:
             return []
 
@@ -493,12 +526,14 @@ class AudioWowPygame:
         return points
 
     def _draw_footer(self):
+        """Draw the selected microphone and keyboard shortcut hint."""
         mic_label = self._current_mic_label()
         draw_text(self.screen, self.fonts["small"], f"Mic: {mic_label}", (760, 1068), COLORS["muted"])
         draw_text(self.screen, self.fonts["small"], "Keys: W add WAV, S add sine, M mic, Space stop/resume, Esc quit",
                   (760, 1090), COLORS["muted"])
 
     def _draw_tracks(self, mouse_pos):
+        """Draw tracks plus volume, mute, solo, select, and remove controls."""
         if not any(getattr(control, "dragging", False) for control in self.track_controls):
             self._sync_track_controls()
         tracks = mixer.get_tracks()
@@ -528,6 +563,7 @@ class AudioWowPygame:
             control.draw(self.screen, self.fonts, mouse_pos)
 
     def _draw_track_fx(self, mouse_pos):
+        """Draw controls for effects on the selected track or all tracks."""
         # Ghost-Fix: nur synchen wenn KEIN Slider gezogen wird UND kein Dragging aktiv
         any_dragging = any(getattr(c, "dragging", False) for c in self.track_fx_controls)
         if not any_dragging:
@@ -556,6 +592,7 @@ class AudioWowPygame:
             control.draw(self.screen, self.fonts, mouse_pos)
 
     def _choose_wav(self):
+        """Open a file picker, load the selected WAV, and start playback if needed."""
         filepath = choose_wav_file()
         if not filepath:
             return
@@ -570,6 +607,7 @@ class AudioWowPygame:
             self._set_error("Could not load WAV", exc)
 
     def _use_sine(self):
+        """Generate a sine wave source and add it as a new track."""
         try:
             data = self._generate_sine(self.sine_freq, self.sine_duration)
             load_audio_data(data)
@@ -582,6 +620,7 @@ class AudioWowPygame:
             self._set_error("Could not start sine", exc)
 
     def _use_microphone(self):
+        """Enable the selected microphone and start a duplex stream."""
         try:
             device_index = None
             if self.mic_devices:
@@ -594,6 +633,7 @@ class AudioWowPygame:
             self._set_error("Could not start mic", exc)
 
     def _refresh_mics(self, silent=False):
+        """Reload the list of available microphone devices."""
         try:
             self.mic_devices = get_microphone_devices()
             self.mic_index = min(self.mic_index, max(0, len(self.mic_devices) - 1))
@@ -606,6 +646,7 @@ class AudioWowPygame:
                 self._set_error("Could not list microphones", exc)
 
     def _next_mic(self):
+        """Select the next detected microphone device."""
         if not self.mic_devices:
             self.status = "No microphone found"
             return
@@ -614,6 +655,7 @@ class AudioWowPygame:
         self.error = ""
 
     def _toggle_effect(self, key, enabled):
+        """Toggle a global effect that applies after the whole mix."""
         name, effect_fn, reset_fn, _color = EFFECTS[key]
         if enabled:
             if effect_fn not in active_effects:
@@ -627,6 +669,7 @@ class AudioWowPygame:
         self.error = ""
 
     def _clear_effects(self):
+        """Disable all global and per-track effects."""
         active_effects.clear()
         for pad in self.effect_pads:
             pad.enabled = False
@@ -639,6 +682,7 @@ class AudioWowPygame:
         self._sync_track_fx_controls(force=True)
 
     def _clear_sources(self):
+        """Stop playback and remove every track and microphone source."""
         self._stop_stream()
         clear_sources()
         self.source = "No source selected"
@@ -649,20 +693,25 @@ class AudioWowPygame:
         self._sync_track_fx_controls(force=True)
 
     def _set_sine_freq(self, value):
+        """Update the frequency used when generating the next sine track."""
         self.sine_freq = value
 
     def _set_sine_duration(self, value):
+        """Update the duration used when generating the next sine track."""
         self.sine_duration = value
 
     def _generate_sine(self, frequency, duration, samplerate=44100):
+        """Generate a mono float32 sine wave."""
         t = np.linspace(0, duration, int(samplerate * duration), endpoint=False)
         return np.sin(2 * np.pi * frequency * t).astype("float32")
 
     def _prepare_new_source(self):
+        """Stop playback and clear old sources before replacing them."""
         self._stop_stream()
         clear_sources()
 
     def _ensure_stream(self):
+        """Start playback if needed; otherwise mark the existing stream as playing."""
         if self.stream is None:
             self._start_stream()
         else:
@@ -670,12 +719,14 @@ class AudioWowPygame:
             self.error = ""
 
     def _resume_stream(self):
+        """Restart playback only when at least one source exists."""
         if not mixer.has_sources():
             self.status = "No source to resume"
             return
         self._start_stream()
 
     def _start_stream(self):
+        """Create and start a fresh audio stream."""
         self._stop_stream()
         self.stream = start_stream()
         self.stream.start()
@@ -683,6 +734,7 @@ class AudioWowPygame:
         self.error = ""
 
     def _stop_stream(self):
+        """Stop and close the current audio stream if one is active."""
         if self.stream is None:
             self.status = "Stopped"
             return
@@ -694,19 +746,23 @@ class AudioWowPygame:
             self.status = "Stopped"
 
     def _set_track_volume(self, index, value):
+        """Forward a track volume change to the mixer."""
         mixer.set_track_volume(index, value)
 
     def _toggle_track_mute(self, index):
+        """Toggle one track's muted state and rebuild the visible controls."""
         tracks = mixer.get_tracks()
         if 0 <= index < len(tracks):
             mixer.set_track_muted(index, not tracks[index]["muted"])
             self._sync_track_controls(force=True)
 
     def _toggle_track_solo(self, index):
+        """Toggle solo mode for one track and rebuild the visible controls."""
         mixer.solo_track(index)
         self._sync_track_controls(force=True)
 
     def _remove_track(self, index):
+        """Remove a track and keep the selected track index valid."""
         mixer.remove_track(index)
         if self.selected_track_index == index:
             self.selected_track_index = None
@@ -716,6 +772,7 @@ class AudioWowPygame:
         self._sync_track_fx_controls(force=True)
 
     def _select_track(self, index):
+        """Select one track for per-track effect editing."""
         if 0 <= index < mixer.track_count():
             self.selected_track_index = index
             self.status = f"Track {index + 1} selected"
@@ -723,6 +780,7 @@ class AudioWowPygame:
             self._sync_track_fx_controls(force=True)
 
     def _select_all_tracks(self):
+        """Select all tracks so effect controls update every track."""
         if mixer.track_count() == 0:
             self.status = "No tracks loaded"
             return
@@ -733,6 +791,7 @@ class AudioWowPygame:
 
     # y: 680 → 760
     def _sync_track_controls(self, force=False):
+        """Rebuild track-row controls when the track list or state changes."""
         tracks = mixer.get_tracks()[:4]
         snapshot = [(track["index"], track["muted"], track["solo"], track["name"]) for track in tracks]
         if not force and snapshot == self.track_snapshot:
@@ -767,6 +826,7 @@ class AudioWowPygame:
                        COLORS["red"]))
 
     def _toggle_track_effect(self, key, enabled):
+        """Enable or disable one effect on the selected track set."""
         if self.selected_track_index is None:
             return
         for index in self._target_track_indices():
@@ -776,12 +836,14 @@ class AudioWowPygame:
         self._sync_track_fx_controls(force=True)
 
     def _set_track_effect_param(self, effect_name, param_name, value):
+        """Apply one per-track effect parameter to the selected track set."""
         if self.selected_track_index is None:
             return
         for index in self._target_track_indices():
             mixer.set_track_effect_param(index, effect_name, param_name, value)
 
     def _target_track_indices(self):
+        """Return the actual track indices represented by the current selection."""
         if self.selected_track_index == -1:
             return range(mixer.track_count())
         if 0 <= self.selected_track_index < mixer.track_count():
@@ -789,6 +851,7 @@ class AudioWowPygame:
         return []
 
     def _sync_track_fx_controls(self, force=False):
+        """Rebuild per-track effect pads and parameter sliders when selection changes."""
         if self.selected_track_index is None or (
             self.selected_track_index != -1 and self.selected_track_index >= mixer.track_count()
         ):
@@ -865,17 +928,20 @@ class AudioWowPygame:
             )
 
     def _current_mic_label(self):
+        """Return a display label for the selected microphone."""
         if not self.mic_devices:
             return "default input"
         device = self.mic_devices[self.mic_index]
         return f"{device['name']} ({device['index']})"
 
     def _set_error(self, title, exc):
+        """Show an operation failure in the status and error areas."""
         self.status = title
         self.error = str(exc)
 
 
 def choose_wav_file():
+    """Open a topmost Tk file dialog and return the selected WAV path."""
     root = tk.Tk()
     root.withdraw()
     root.attributes("-topmost", True)
@@ -888,6 +954,7 @@ def choose_wav_file():
 
 
 def run_ui():
+    """Import pygame lazily and start the pygame application."""
     global pygame
     import pygame
 

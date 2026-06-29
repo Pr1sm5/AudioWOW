@@ -13,19 +13,23 @@ _wet = 0.5   # ← neu (ersetzt _mix)
 
 
 def set_dry(value: float):
+    """Set the volume of the original signal in the reverb output."""
     global _dry
     _dry = max(0.0, min(1.0, value))
 
 def set_wet(value: float):
+    """Set the volume of the generated reflections in the reverb output."""
     global _wet
     _wet = max(0.0, min(1.0, value))
 
 # Alias für Rückwärtskompatibilität
 def set_mix(value: float):
+    """Backward-compatible name for setting the wet reverb amount."""
     set_wet(value)
 
 
 def set_preset(preset: str):
+    """Choose a group of echo timings that approximates a room size."""
     global _delays, _buffer
     _buffer = None
 
@@ -44,6 +48,7 @@ def set_preset(preset: str):
 
 
 def apply_reverb(chunk: np.ndarray, samplerate: int) -> np.ndarray:
+    """Generate simple reverb by summing several delayed, decayed copies."""
     global _buffer, _buffer_pos
 
     max_delay_samples = int(max(d[0] for d in _delays) * samplerate)
@@ -73,6 +78,7 @@ def apply_reverb(chunk: np.ndarray, samplerate: int) -> np.ndarray:
 
 
 def reset():
+    """Clear reverb memory so old reflections stop immediately."""
     global _buffer, _buffer_pos
     _buffer     = None
     _buffer_pos = 0
